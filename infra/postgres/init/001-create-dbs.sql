@@ -1,0 +1,2 @@
+CREATE DATABASE crm_auth;
+CREATE DATABASE crm_main;

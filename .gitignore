@@ -1,0 +1,22 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# Rider
+.idea/
+
+# Node
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store

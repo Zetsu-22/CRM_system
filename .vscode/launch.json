@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CRM: Debug Backend",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}\\CrmSystem.Api\\bin\\Debug\\net10.0\\CrmSystem.Api.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}\\CrmSystem.Api",
+      "console": "internalConsole"
+    }
+  ]
+}
