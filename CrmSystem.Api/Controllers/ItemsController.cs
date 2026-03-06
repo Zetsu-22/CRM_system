@@ -30,7 +30,7 @@ public sealed class ItemsController(CrmDbContext db) : ControllerBase
         {
             Id = Guid.NewGuid(),
             Type = dto.Type,
-            Sku = dto.Sku,
+            Sku = "ITEM-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
             Barcode = dto.Barcode,
             Name = dto.Name,
             Description = dto.Description,
@@ -52,7 +52,6 @@ public sealed class ItemsController(CrmDbContext db) : ControllerBase
         if (entity is null) return NotFound();
 
         entity.Type = dto.Type;
-        entity.Sku = dto.Sku;
         entity.Barcode = dto.Barcode;
         entity.Name = dto.Name;
         entity.Description = dto.Description;
@@ -79,7 +78,6 @@ public sealed class ItemsController(CrmDbContext db) : ControllerBase
 
 public sealed record ItemDto(
     ItemType Type,
-    string Sku,
     string? Barcode,
     string Name,
     string? Description,

@@ -2,11 +2,11 @@ $killed = @()
 
 # Kill by port 5035
 $portProc = Get-NetTCPConnection -LocalPort 5035 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
-foreach ($pid in $portProc) {
-    if ($pid -and $pid -notin $killed) {
-        Write-Host "Killing process on port 5035, PID $pid..."
-        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-        $killed += $pid
+foreach ($procId in $portProc) {
+    if ($procId -and $procId -notin $killed) {
+        Write-Host "Killing process on port 5035, PID $procId..."
+        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+        $killed += $procId
     }
 }
 

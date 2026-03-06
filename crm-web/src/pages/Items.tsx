@@ -17,10 +17,11 @@ interface Item {
   isStockItem: boolean
 }
 
-const empty = () => ({ type: 'Product', sku: '', barcode: '', name: '', description: '', unit: 'шт', vatRate: 'Vat20', isStockItem: true })
+const empty = () => ({ type: 'Product', sku: '', barcode: '', name: '', description: '', unit: 'шт', vatRate: 'Vat0', isStockItem: true })
 
 const typeLabel: Record<string, string> = { Product: 'Товар', Service: 'Услуга' }
 const vatLabel: Record<string, string> = { Vat0: '0%', Vat5: '5%', Vat7: '7%', Vat10: '10%', Vat22: '22%' }
+const vatOptions = Object.entries(vatLabel)
 
 export function ItemsPage() {
   const [items, setItems] = useState<Item[]>([])
@@ -54,7 +55,6 @@ export function ItemsPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast('error', 'Название обязательно'); return }
-    if (!form.sku.trim()) { toast('error', 'Артикул обязателен'); return }
     setSaving(true)
     try {
       if (modal === 'create') {
@@ -119,8 +119,10 @@ export function ItemsPage() {
                 <option value="Product">Товар</option>
                 <option value="Service">Услуга</option>
               </select></div>
-            <div className="formGroup"><label className="formLabel">Артикул *</label>
-              <input className="formInput" value={form.sku} onChange={f('sku')} /></div>
+            {modal === 'edit' && (
+              <div className="formGroup"><label className="formLabel">Артикул</label>
+                <input className="formInput" value={form.sku} readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} /></div>
+            )}
             <div className="formGroup full"><label className="formLabel">Название *</label>
               <input className="formInput" value={form.name} onChange={f('name')} /></div>
             <div className="formGroup full"><label className="formLabel">Описание</label>
@@ -129,11 +131,7 @@ export function ItemsPage() {
               <input className="formInput" value={form.unit} onChange={f('unit')} /></div>
             <div className="formGroup"><label className="formLabel">Ставка НДС</label>
               <select className="formSelect" value={form.vatRate} onChange={f('vatRate')}>
-                <option value="Vat0">0%</option>
-                <option value="Vat5">5%</option>
-                <option value="Vat7">7%</option>
-                <option value="Vat10">10%</option>
-                <option value="Vat22">22%</option>
+                {vatOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select></div>
             <div className="formGroup"><label className="formLabel">Штрихкод</label>
               <input className="formInput" value={form.barcode} onChange={f('barcode')} /></div>

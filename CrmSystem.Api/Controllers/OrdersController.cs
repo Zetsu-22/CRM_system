@@ -9,6 +9,16 @@ namespace CrmSystem.Api.Controllers;
 [Route("api/v1/orders")]
 public sealed class OrdersController(CrmDbContext db) : ControllerBase
 {
+    static OrderResponse ToResponse(SalesOrder o) => new(
+        o.Id, o.Number, o.Date, o.CompanyId, o.Company?.Name,
+        o.CounterpartyId, o.Counterparty?.Name,
+        o.Status, o.Comment, o.TotalNet, o.TotalVat, o.TotalGross,
+        o.CreatedAt, o.UpdatedAt,
+        o.Lines.Select(l => new OrderLineResponse(
+            l.Id, l.ItemId, l.Item?.Name, l.NameSnapshot, l.VatRateSnapshot,
+            l.Qty, l.UnitPrice, l.DiscountType, l.DiscountValue,
+            l.Net, l.Vat, l.Gross, l.WarehouseId)).ToList());
+
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
@@ -18,7 +28,7 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
             .Include(x => x.Lines).ThenInclude(l => l.Item)
             .OrderByDescending(x => x.Date)
             .ToListAsync(ct);
-        return Ok(list);
+        return Ok(list.Select(ToResponse));
     }
 
     [HttpGet("{id:guid}")]
@@ -29,7 +39,7 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
             .Include(x => x.Counterparty)
             .Include(x => x.Lines).ThenInclude(l => l.Item)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        return item is null ? NotFound() : Ok(item);
+        return item is null ? NotFound() : Ok(ToResponse(item));
     }
 
     [HttpPost]
@@ -78,7 +88,10 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
 
         db.Orders.Add(entity);
         await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
+        await db.Entry(entity).Reference(x => x.Company).LoadAsync(ct);
+        await db.Entry(entity).Reference(x => x.Counterparty).LoadAsync(ct);
+        foreach (var l in entity.Lines) await db.Entry(l).Reference(x => x.Item).LoadAsync(ct);
+        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, ToResponse(entity));
     }
 
     [HttpPut("{id:guid}")]
@@ -132,7 +145,10 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
         entity.TotalGross = entity.Lines.Sum(l => l.Gross);
 
         await db.SaveChangesAsync(ct);
-        return Ok(entity);
+        await db.Entry(entity).Reference(x => x.Company).LoadAsync(ct);
+        await db.Entry(entity).Reference(x => x.Counterparty).LoadAsync(ct);
+        foreach (var l in entity.Lines) await db.Entry(l).Reference(x => x.Item).LoadAsync(ct);
+        return Ok(ToResponse(entity));
     }
 
     [HttpPatch("{id:guid}/status")]
@@ -143,7 +159,7 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
         entity.Status = dto.Status;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        return Ok(entity);
+        return Ok(new { id = entity.Id, status = entity.Status });
     }
 
     [HttpDelete("{id:guid}")]
@@ -178,3 +194,17 @@ public sealed record SalesOrderLineDto(
     Guid? WarehouseId);
 
 public sealed record StatusDto(OrderStatus Status);
+
+public sealed record OrderLineResponse(
+    Guid Id, Guid ItemId, string? ItemName, string NameSnapshot, VatRate VatRateSnapshot,
+    decimal Qty, decimal UnitPrice, DiscountType DiscountType, decimal DiscountValue,
+    decimal Net, decimal Vat, decimal Gross, Guid? WarehouseId);
+
+public sealed record OrderResponse(
+    Guid Id, string? Number, DateOnly Date,
+    Guid CompanyId, string? CompanyName,
+    Guid CounterpartyId, string? CounterpartyName,
+    OrderStatus Status, string? Comment,
+    decimal TotalNet, decimal TotalVat, decimal TotalGross,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    List<OrderLineResponse> Lines);
