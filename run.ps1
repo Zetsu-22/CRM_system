@@ -1,5 +1,7 @@
 param(
-  [switch]$SkipDb
+  [switch]$SkipDb,
+  [switch]$SkipStart,
+  [string]$PgPassword = 'postgres'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,7 +11,51 @@ function Test-CommandExists {
   return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Find-Psql {
+  if (Test-CommandExists 'psql') {
+    return 'psql'
+  }
+
+  $candidates = @(
+    'C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe',
+    'C:\\Program Files\\PostgreSQL\\16\\bin\\psql.exe',
+    'C:\\Program Files\\PostgreSQL\\15\\bin\\psql.exe',
+    'C:\\Program Files\\PostgreSQL\\14\\bin\\psql.exe'
+  )
+
+  foreach ($c in $candidates) {
+    if (Test-Path $c) {
+      return $c
+    }
+  }
+
+  return $null
+}
+
+function Ensure-Database {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$DatabaseName,
+    [Parameter(Mandatory = $true)]
+    [string]$PsqlPath
+  )
+
+  $query = "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName'"
+  $exists = & $PsqlPath -h localhost -p 5432 -U postgres -d postgres -tAc $query
+
+  if ([string]::IsNullOrWhiteSpace($exists)) {
+    Write-Host "Creating database $DatabaseName..."
+    & $PsqlPath -h localhost -p 5432 -U postgres -d postgres -c "CREATE DATABASE $DatabaseName;" | Out-Null
+  }
+  else {
+    Write-Host "$DatabaseName already exists."
+  }
+}
+
 Write-Host "== CRM System runner =="
+
+Write-Host "Building solution..."
+dotnet build .\CrmSystem.slnx
 
 if (-not $SkipDb) {
   if (Test-CommandExists 'docker') {
@@ -33,21 +79,38 @@ if (-not $SkipDb) {
     }
 
     Write-Host "Applying EF Core migrations..."
-    dotnet ef database update --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context AuthDbContext
-    dotnet ef database update --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context CrmDbContext
-  }
-  elseif (Test-CommandExists 'psql') {
-    Write-Host "Docker not found. Will try local PostgreSQL via psql..."
-    psql -U postgres -c "CREATE DATABASE crm_auth;" 2>$null
-    psql -U postgres -c "CREATE DATABASE crm_main;" 2>$null
+    $env:PGPASSWORD = $PgPassword
+    dotnet ef database update --no-build --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context AuthDbContext
+    if ($LASTEXITCODE -ne 0) { throw "AuthDb migrations failed." }
 
-    Write-Host "Applying EF Core migrations..."
-    dotnet ef database update --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context AuthDbContext
-    dotnet ef database update --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context CrmDbContext
+    dotnet ef database update --no-build --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context CrmDbContext
+    if ($LASTEXITCODE -ne 0) { throw "CrmDb migrations failed." }
   }
   else {
-    Write-Warning "Neither docker nor psql found. Skipping DB setup. Install Docker Desktop or PostgreSQL (psql) to enable automatic DB creation."
+    $psql = Find-Psql
+    if ($psql) {
+      Write-Host "Docker not found. Will try local PostgreSQL via psql..."
+
+      $env:PGPASSWORD = $PgPassword
+      Ensure-Database -DatabaseName 'crm_auth' -PsqlPath $psql
+      Ensure-Database -DatabaseName 'crm_main' -PsqlPath $psql
+
+      Write-Host "Applying EF Core migrations..."
+      dotnet ef database update --no-build --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context AuthDbContext
+      if ($LASTEXITCODE -ne 0) { throw "AuthDb migrations failed." }
+
+      dotnet ef database update --no-build --project .\CrmSystem.Persistence\CrmSystem.Persistence.csproj --startup-project .\CrmSystem.Api\CrmSystem.Api.csproj --context CrmDbContext
+      if ($LASTEXITCODE -ne 0) { throw "CrmDb migrations failed." }
+    }
+    else {
+      Write-Warning "Neither docker nor psql found. Skipping DB setup. Install Docker Desktop or PostgreSQL (psql) to enable automatic DB creation."
+    }
   }
+}
+
+if ($SkipStart) {
+  Write-Host "DB setup and migrations done. Skipping start (SkipStart flag set)."
+  exit 0
 }
 
 Write-Host "Starting backend and frontend..."

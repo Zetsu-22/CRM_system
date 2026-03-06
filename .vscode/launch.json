@@ -2,13 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "CRM: Debug Backend",
-      "type": "coreclr",
+      "name": "CRM: Start All (F5)",
+      "type": "node",
       "request": "launch",
-      "program": "${workspaceFolder}\\CrmSystem.Api\\bin\\Debug\\net10.0\\CrmSystem.Api.dll",
-      "args": [],
-      "cwd": "${workspaceFolder}\\CrmSystem.Api",
-      "console": "internalConsole"
+      "preLaunchTask": "CRM: Start All",
+      "program": "${workspaceFolder}/crm-web/node_modules/.bin/vite",
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}/crm-web",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Local:\\s+(https?://localhost:\\d+)"
+      }
     }
   ]
 }

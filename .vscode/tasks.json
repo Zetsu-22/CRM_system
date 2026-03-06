@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "CRM: Run (one command)",
+      "label": "CRM: Migrate DB",
       "type": "shell",
       "command": "powershell",
       "args": [
@@ -10,16 +10,20 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}\\run.ps1"
+        "${workspaceFolder}\\run.ps1",
+        "-PgPassword",
+        "123",
+        "-SkipStart"
       ],
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
-        "panel": "new"
+        "panel": "shared",
+        "group": "crm"
       }
     },
     {
-      "label": "CRM: Run Backend",
+      "label": "CRM: Backend",
       "type": "shell",
       "command": "dotnet",
       "args": [
@@ -27,27 +31,62 @@
         "--project",
         "${workspaceFolder}\\CrmSystem.Api\\CrmSystem.Api.csproj"
       ],
-      "problemMatcher": "$msCompile",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "crm-backend",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Building\\.\\.\\.",
+          "endsPattern": "Now listening on:"
+        }
+      },
       "presentation": {
         "reveal": "always",
-        "panel": "new"
-      }
+        "panel": "dedicated",
+        "group": "crm"
+      },
+      "dependsOn": ["CRM: Migrate DB"]
     },
     {
-      "label": "CRM: Run Frontend",
+      "label": "CRM: Frontend",
       "type": "shell",
       "command": "npm.cmd",
-      "options": {
-        "cwd": "${workspaceFolder}\\crm-web"
-      },
       "args": [
         "run",
         "dev"
       ],
+      "options": {
+        "cwd": "${workspaceFolder}\\crm-web"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "crm-frontend",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "crm"
+      }
+    },
+    {
+      "label": "CRM: Start All",
+      "dependsOn": ["CRM: Backend", "CRM: Frontend"],
+      "dependsOrder": "parallel",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
-        "panel": "new"
+        "panel": "shared"
       }
     }
   ]
