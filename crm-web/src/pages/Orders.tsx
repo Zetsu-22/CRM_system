@@ -37,13 +37,13 @@ interface Order {
   lines: OrderLine[]
 }
 
-const STATUS_LABELS: Record<string, string> = { Draft: 'Черновик', Confirmed: 'Подтверждён', Closed: 'Закрыт', Cancelled: 'Отменён' }
-const STATUS_BADGE: Record<string, string> = { Draft: 'badge-gray', Confirmed: 'badge-green', Closed: 'badge-blue', Cancelled: 'badge-red' }
+const STATUS_LABELS: Record<string, string> = { Draft: 'Черновик', Confirmed: 'Подтверждён', Fulfilled: 'Выполнен', Closed: 'Закрыт', Cancelled: 'Отменён' }
+const STATUS_BADGE: Record<string, string> = { Draft: 'badge-gray', Confirmed: 'badge-green', Fulfilled: 'badge-blue', Closed: 'badge-blue', Cancelled: 'badge-red' }
 const VAT_VALUES: Record<string, number> = { Vat0: 0, Vat5: 5, Vat7: 7, Vat10: 10, Vat22: 22 }
 
 const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
 
-const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat20', qty: 1, unitPrice: 0, discountType: 'None', discountValue: 0 })
+const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0', qty: 1, unitPrice: 0, discountType: 'None', discountValue: 0 })
 
 export function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -57,7 +57,7 @@ export function OrdersPage() {
 
   const [form, setForm] = useState({
     number: '', date: new Date().toISOString().slice(0, 10),
-    companyId: '', counterpartyId: '', status: 'Draft', comment: '',
+    companyId: '', counterpartyId: '', comment: '',
     lines: [emptyLine()]
   })
 
@@ -76,16 +76,17 @@ export function OrdersPage() {
   useEffect(() => { load() }, [])
 
   const openCreate = () => {
-    setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', status: 'Draft', comment: '', lines: [emptyLine()] })
+    setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', comment: '', lines: [emptyLine()] })
     setModal('create')
   }
 
   const openEdit = (o: Order) => {
+    if (o.status !== 'Draft') { toast('error', 'Редактирование доступно только для черновиков'); return }
     setSelected(o)
     setForm({
       number: o.number ?? '', date: o.date.slice(0, 10),
       companyId: o.company?.id ?? '', counterpartyId: o.counterparty?.id ?? '',
-      status: o.status, comment: o.comment ?? '',
+      comment: o.comment ?? '',
       lines: o.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: l.discountType, discountValue: l.discountValue }))
     })
     setModal('edit')
@@ -114,7 +115,6 @@ export function OrdersPage() {
     date: form.date,
     companyId: form.companyId,
     counterpartyId: form.counterpartyId,
-    status: form.status,
     comment: form.comment || null,
     lines: form.lines.map(l => ({
       itemId: l.itemId,
@@ -127,6 +127,15 @@ export function OrdersPage() {
       warehouseId: null
     }))
   })
+
+  const transition = async (id: string, action: 'confirm' | 'fulfill' | 'close' | 'cancel') => {
+    const labels: Record<string, string> = { confirm: 'подтверждён', fulfill: 'выполнен', close: 'закрыт', cancel: 'отменён' }
+    try {
+      await api.post(`/orders/${id}/${action}`, {})
+      toast('success', `Заказ ${labels[action]}`)
+      load()
+    } catch (e: any) { toast('error', e.message ?? 'Ошибка') }
+  }
 
   const handleSave = async () => {
     if (!form.companyId) { toast('error', 'Выберите организацию'); return }
@@ -181,8 +190,21 @@ export function OrdersPage() {
                   <td>{fmt(o.totalVat)}</td>
                   <td><strong>{fmt(o.totalGross)}</strong></td>
                   <td onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => openEdit(o)}>Изм.</button>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {o.status === 'Draft' && <>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(o)}>Изм.</button>
+                        <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'confirm')}>Подтв.</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Откл.</button>
+                      </>}
+                      {o.status === 'Confirmed' && <>
+                        <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'fulfill')}>Выполнить</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => transition(o.id, 'close')}>Закрыть</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Откл.</button>
+                      </>}
+                      {o.status === 'Fulfilled' && <>
+                        <button className="btn btn-secondary btn-sm" onClick={() => transition(o.id, 'close')}>Закрыть</button>
+                      </>}
+                      {(o.status === 'Closed' || o.status === 'Cancelled') && null}
                       <button className="btn btn-danger btn-sm" onClick={() => openDelete(o)}>Удал.</button>
                     </div>
                   </td>
@@ -209,10 +231,6 @@ export function OrdersPage() {
               <select className="formSelect" value={form.counterpartyId} onChange={e => setForm(p => ({ ...p, counterpartyId: e.target.value }))}>
                 <option value="">— выберите —</option>
                 {counterparties.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select></div>
-            <div className="formGroup"><label className="formLabel">Статус</label>
-              <select className="formSelect" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
-                {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select></div>
             <div className="formGroup"><label className="formLabel">Комментарий</label>
               <input className="formInput" value={form.comment} onChange={e => setForm(p => ({ ...p, comment: e.target.value }))} /></div>
@@ -289,8 +307,12 @@ export function OrdersPage() {
             <strong>Итого: {fmt(selected.totalGross)}</strong>
           </div>
           <div className="formActions">
+            {selected.status === 'Draft' && <button className="btn btn-secondary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}>Редактировать</button>}
+            {selected.status === 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'confirm'); closeModal() }}>Подтвердить</button>}
+            {selected.status === 'Confirmed' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'fulfill'); closeModal() }}>Выполнить</button>}
+            {(selected.status === 'Confirmed' || selected.status === 'Fulfilled') && <button className="btn btn-secondary" onClick={() => { transition(selected!.id, 'close'); closeModal() }}>Закрыть</button>}
+            {(selected.status === 'Draft' || selected.status === 'Confirmed') && <button className="btn btn-danger" onClick={() => { transition(selected!.id, 'cancel'); closeModal() }}>Отменить</button>}
             <button className="btn btn-secondary" onClick={closeModal}>Закрыть</button>
-            <button className="btn btn-primary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected), 50) }}>Редактировать</button>
           </div>
         </Modal>
       )}

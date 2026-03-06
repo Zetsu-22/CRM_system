@@ -47,6 +47,7 @@ public enum OrderStatus
 {
     Draft = 1,
     Confirmed = 2,
+    Fulfilled = 5,
     Closed = 3,
     Cancelled = 4
 }
