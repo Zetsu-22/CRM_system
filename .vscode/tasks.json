@@ -56,7 +56,9 @@
       "command": "npm.cmd",
       "args": [
         "run",
-        "dev"
+        "dev",
+        "--",
+        "--open"
       ],
       "options": {
         "cwd": "${workspaceFolder}\\crm-web"
