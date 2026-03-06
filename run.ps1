@@ -54,6 +54,19 @@ function Ensure-Database {
 
 Write-Host "== CRM System runner =="
 
+Write-Host "Stopping any running backend processes..."
+Get-Process -Name 'CrmSystem.Api' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name 'dotnet' -ErrorAction SilentlyContinue | Where-Object {
+  try { $_.MainModule.FileName -like '*dotnet*' } catch { $false }
+} | ForEach-Object {
+  $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+  if ($cmdline -like '*CrmSystem.Api*') {
+    Write-Host "Killing old backend PID $($_.Id)..."
+    $_ | Stop-Process -Force -ErrorAction SilentlyContinue
+  }
+}
+Start-Sleep -Seconds 1
+
 Write-Host "Building solution..."
 dotnet build .\CrmSystem.slnx
 
@@ -115,7 +128,7 @@ if ($SkipStart) {
 
 Write-Host "Starting backend and frontend..."
 
-Start-Process -NoNewWindow -FilePath "dotnet" -ArgumentList "run --project .\CrmSystem.Api\CrmSystem.Api.csproj"
+Start-Process -NoNewWindow -FilePath "dotnet" -ArgumentList "run --no-build --project .\CrmSystem.Api\CrmSystem.Api.csproj"
 Start-Process -NoNewWindow -FilePath "npm.cmd" -ArgumentList "run dev" -WorkingDirectory (Join-Path $PSScriptRoot 'crm-web')
 
 Write-Host "Backend: http://localhost:5035"
