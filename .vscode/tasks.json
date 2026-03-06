@@ -92,13 +92,12 @@
       "command": "npm.cmd",
       "args": [
         "run",
-        "dev"
+        "dev",
+        "--",
+        "--open"
       ],
       "options": {
-        "cwd": "${workspaceFolder}\\crm-web",
-        "env": {
-          "BROWSER": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-        }
+        "cwd": "${workspaceFolder}\\crm-web"
       },
       "isBackground": true,
       "problemMatcher": {
