@@ -4,7 +4,16 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
+    p.WithOrigins("http://localhost:5173")
+     .AllowAnyHeader()
+     .AllowAnyMethod()));
+
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<AuthDbContext>(options =>
@@ -19,6 +28,8 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.UseCors();
 
 app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 

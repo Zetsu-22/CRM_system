@@ -1,0 +1,199 @@
+/* ---- Table ---- */
+.crmTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.crmTable th {
+  text-align: left;
+  padding: 10px 12px;
+  background: rgba(120,148,255,0.06);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.crmTable td {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  vertical-align: middle;
+}
+
+.crmTable tr:last-child td {
+  border-bottom: none;
+}
+
+.crmTable tr:hover td {
+  background: rgba(120,148,255,0.04);
+}
+
+.tableWrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.tableEmpty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.tableLoading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 0.15s, background 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: #4f6ef7;
+  color: #fff;
+  border-color: #4f6ef7;
+}
+.btn-primary:hover:not(:disabled) { background: #3d5de8; }
+
+.btn-secondary {
+  background: rgba(255,255,255,0.06);
+  color: #c8cfe8;
+  border-color: var(--border);
+}
+.btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.1); }
+
+.btn-danger {
+  background: rgba(239,68,68,0.12);
+  color: #ef4444;
+  border-color: rgba(239,68,68,0.3);
+}
+.btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.2); }
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+/* ---- Form fields ---- */
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.formGrid.cols1 {
+  grid-template-columns: 1fr;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.formGroup.full {
+  grid-column: 1 / -1;
+}
+
+.formLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.formInput,
+.formSelect,
+.formTextarea {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: #e0e4f8;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.formInput:focus,
+.formSelect:focus,
+.formTextarea:focus {
+  outline: none;
+  border-color: rgba(120,148,255,0.6);
+}
+
+.formSelect option {
+  background: #1a1f30;
+}
+
+.formTextarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+/* ---- Status badges ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.badge-green  { background: rgba(42,195,106,0.1);  border-color: rgba(42,195,106,0.4);  color: #2ac36a; }
+.badge-yellow { background: rgba(234,179,8,0.1);   border-color: rgba(234,179,8,0.4);   color: #eab308; }
+.badge-red    { background: rgba(239,68,68,0.1);   border-color: rgba(239,68,68,0.4);   color: #ef4444; }
+.badge-blue   { background: rgba(120,148,255,0.1); border-color: rgba(120,148,255,0.4); color: #7894ff; }
+.badge-gray   { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #94a3b8; }
+
+/* ---- Form actions row ---- */
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Confirm dialog ---- */
+.confirmBox {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+.confirmBox p {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.confirmActions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
