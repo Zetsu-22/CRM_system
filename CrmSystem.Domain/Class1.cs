@@ -45,11 +45,18 @@ public enum VatRate
 
 public enum OrderStatus
 {
-    Draft = 1,
-    Confirmed = 2,
-    Fulfilled = 5,
-    Closed = 3,
-    Cancelled = 4
+    Draft = 0,
+    Processing = 1,
+    WaitingForPayment = 2,
+    BillConfirmed = 3,
+    Manufacturing = 4,
+    Picking = 5,
+    TransferredToTransport = 6,
+    DeliveringByTransport = 7,
+    Delivering = 8,
+    AwaitingPickup = 9,
+    Completed = 10,
+    Cancelled = 11
 }
 
 public enum InvoiceStatus

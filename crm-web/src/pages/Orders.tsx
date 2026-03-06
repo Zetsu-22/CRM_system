@@ -37,8 +37,36 @@ interface Order {
   lines: OrderLine[]
 }
 
-const STATUS_LABELS: Record<string, string> = { Draft: 'Черновик', Confirmed: 'Подтверждён', Fulfilled: 'Выполнен', Closed: 'Закрыт', Cancelled: 'Отменён' }
-const STATUS_BADGE: Record<string, string> = { Draft: 'badge-gray', Confirmed: 'badge-green', Fulfilled: 'badge-blue', Closed: 'badge-blue', Cancelled: 'badge-red' }
+const STATUS_LABELS: Record<string, string> = {
+  Draft: 'Черновик',
+  Processing: 'Обрабатывается',
+  WaitingForPayment: 'Ожидает оплаты',
+  BillConfirmed: 'Счёт подтверждён',
+  Manufacturing: 'Изготавливается',
+  Picking: 'Собирается',
+  TransferredToTransport: 'Передан в ТК',
+  DeliveringByTransport: 'Доставляется ТК',
+  Delivering: 'Доставляется',
+  AwaitingPickup: 'Готов к получению',
+  Completed: 'Получен',
+  Cancelled: 'Отменён',
+}
+const STATUS_BADGE: Record<string, string> = {
+  Draft: 'badge-gray',
+  Processing: 'badge-blue',
+  WaitingForPayment: 'badge-orange',
+  BillConfirmed: 'badge-green',
+  Manufacturing: 'badge-purple',
+  Picking: 'badge-teal',
+  TransferredToTransport: 'badge-blue',
+  DeliveringByTransport: 'badge-blue',
+  Delivering: 'badge-green',
+  AwaitingPickup: 'badge-orange',
+  Completed: 'badge-green',
+  Cancelled: 'badge-red',
+}
+const FINAL_STATUSES = ['Completed', 'Cancelled']
+const LOCKED_STATUSES = ['DeliveringByTransport', 'Delivering', 'AwaitingPickup', 'Completed', 'Cancelled']
 const VAT_VALUES: Record<string, number> = { Vat0: 0, Vat5: 5, Vat7: 7, Vat10: 10, Vat22: 22 }
 
 const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
@@ -81,7 +109,7 @@ export function OrdersPage() {
   }
 
   const openEdit = (o: Order) => {
-    if (o.status !== 'Draft') { toast('error', 'Редактирование доступно только для черновиков'); return }
+    if (LOCKED_STATUSES.includes(o.status)) { toast('error', 'Редактирование недоступно: заказ уже в доставке или завершён'); return }
     setSelected(o)
     setForm({
       number: o.number ?? '', date: o.date.slice(0, 10),
@@ -128,11 +156,12 @@ export function OrdersPage() {
     }))
   })
 
-  const transition = async (id: string, action: 'confirm' | 'fulfill' | 'close' | 'cancel') => {
-    const labels: Record<string, string> = { confirm: 'подтверждён', fulfill: 'выполнен', close: 'закрыт', cancel: 'отменён' }
+  const transition = async (id: string, action: 'confirm' | 'cancel' | 'next-status', deliveryType?: string) => {
+    const labels: Record<string, string> = { confirm: 'подтверждён', cancel: 'отменён', 'next-status': 'обновлён' }
+    const url = deliveryType ? `/orders/${id}/${action}?deliveryType=${deliveryType}` : `/orders/${id}/${action}`
     try {
-      await api.post(`/orders/${id}/${action}`, {})
-      toast('success', `Заказ ${labels[action]}`)
+      await api.post(url, {})
+      toast('success', `Статус заказа ${labels[action]}`)
       load()
     } catch (e: any) { toast('error', e.message ?? 'Ошибка') }
   }
@@ -191,20 +220,10 @@ export function OrdersPage() {
                   <td><strong>{fmt(o.totalGross)}</strong></td>
                   <td onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {o.status === 'Draft' && <>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(o)}>Изм.</button>
-                        <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'confirm')}>Подтв.</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Откл.</button>
-                      </>}
-                      {o.status === 'Confirmed' && <>
-                        <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'fulfill')}>Выполнить</button>
-                        <button className="btn btn-secondary btn-sm" onClick={() => transition(o.id, 'close')}>Закрыть</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Откл.</button>
-                      </>}
-                      {o.status === 'Fulfilled' && <>
-                        <button className="btn btn-secondary btn-sm" onClick={() => transition(o.id, 'close')}>Закрыть</button>
-                      </>}
-                      {(o.status === 'Closed' || o.status === 'Cancelled') && null}
+                      {!LOCKED_STATUSES.includes(o.status) && <button className="btn btn-secondary btn-sm" onClick={() => openEdit(o)}>Изм.</button>}
+                      {o.status === 'Draft' && <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'confirm')}>Подтв.</button>}
+                      {!FINAL_STATUSES.includes(o.status) && o.status !== 'Draft' && <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'next-status')}>Далее ›</button>}
+                      {!FINAL_STATUSES.includes(o.status) && <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Отменить</button>}
                       <button className="btn btn-danger btn-sm" onClick={() => openDelete(o)}>Удал.</button>
                     </div>
                   </td>
@@ -307,11 +326,10 @@ export function OrdersPage() {
             <strong>Итого: {fmt(selected.totalGross)}</strong>
           </div>
           <div className="formActions">
-            {selected.status === 'Draft' && <button className="btn btn-secondary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}>Редактировать</button>}
+            {!LOCKED_STATUSES.includes(selected.status) && <button className="btn btn-secondary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}>Редактировать</button>}
             {selected.status === 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'confirm'); closeModal() }}>Подтвердить</button>}
-            {selected.status === 'Confirmed' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'fulfill'); closeModal() }}>Выполнить</button>}
-            {(selected.status === 'Confirmed' || selected.status === 'Fulfilled') && <button className="btn btn-secondary" onClick={() => { transition(selected!.id, 'close'); closeModal() }}>Закрыть</button>}
-            {(selected.status === 'Draft' || selected.status === 'Confirmed') && <button className="btn btn-danger" onClick={() => { transition(selected!.id, 'cancel'); closeModal() }}>Отменить</button>}
+            {!FINAL_STATUSES.includes(selected.status) && selected.status !== 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'next-status'); closeModal() }}>Следующий статус ›</button>}
+            {!FINAL_STATUSES.includes(selected.status) && <button className="btn btn-danger" onClick={() => { transition(selected!.id, 'cancel'); closeModal() }}>Отменить</button>}
             <button className="btn btn-secondary" onClick={closeModal}>Закрыть</button>
           </div>
         </Modal>

@@ -2,97 +2,115 @@
 
 ## Статусы заказа (SalesOrder)
 
-| Значение | Код | Описание |
-|----------|-----|----------|
-| `Draft` | 1 | Черновик — заказ создан, редактируется |
-| `Confirmed` | 2 | Подтверждён — заказ зафиксирован |
-| `Fulfilled` | 5 | Выполнен — товар отгружен / услуга оказана |
-| `Closed` | 3 | Закрыт — заказ завершён |
-| `Cancelled` | 4 | Отменён — заказ аннулирован |
+| Код | Имя | Отображение | Группа (канбан) |
+|-----|-----|-------------|-----------------|
+| 0 | `Draft` | Черновик | Черновик |
+| 1 | `Processing` | Обрабатывается | Обрабатывается |
+| 2 | `WaitingForPayment` | Ожидает оплаты | В работе |
+| 3 | `BillConfirmed` | Счёт подтверждён | В работе |
+| 4 | `Manufacturing` | Изготавливается | В работе |
+| 5 | `Picking` | Собирается | В работе |
+| 6 | `TransferredToTransport` | Передан в ТК | В работе |
+| 7 | `DeliveringByTransport` | Доставляется ТК | В работе |
+| 8 | `Delivering` | Доставляется | В работе |
+| 9 | `AwaitingPickup` | Готов к получению | В работе |
+| 10 | `Completed` | Получен | Получено ✓ |
+| 11 | `Cancelled` | Отменён | Отменено ✗ |
 
-## Допустимые переходы
+## Схема переходов
 
+### Базовая линейка (без учёта типа доставки)
 ```
-Draft ──► Confirmed ──► Fulfilled ──► Closed
-  │           │                         ▲
-  │           └─────────────────────────┘
-  │                  (skip Fulfilled)
-  ▼               ▼
-Cancelled     Cancelled
+Draft(0) → Processing(1) → WaitingForPayment(2) → BillConfirmed(3) → Manufacturing(4)
+  → Picking(5) → TransferredToTransport(6) → DeliveringByTransport(7) → Delivering(8)
+  → AwaitingPickup(9) → Completed(10)
+
+Любой не-финальный → Cancelled(11)
 ```
 
-| Из → В | Endpoint | Условие |
-|--------|----------|---------|
-| `Draft` → `Confirmed` | `POST /api/v1/orders/{id}/confirm` | Статус должен быть `Draft` |
-| `Confirmed` → `Fulfilled` | `POST /api/v1/orders/{id}/fulfill` | Статус должен быть `Confirmed` |
-| `Confirmed` → `Closed` | `POST /api/v1/orders/{id}/close` | Статус должен быть `Confirmed` или `Fulfilled` |
-| `Fulfilled` → `Closed` | `POST /api/v1/orders/{id}/close` | Статус должен быть `Confirmed` или `Fulfilled` |
-| `Draft` → `Cancelled` | `POST /api/v1/orders/{id}/cancel` | Статус должен быть `Draft` или `Confirmed` |
-| `Confirmed` → `Cancelled` | `POST /api/v1/orders/{id}/cancel` | Статус должен быть `Draft` или `Confirmed` |
+### Пути по типу доставки (параметр `deliveryType`)
 
-## Правила редактирования
+| Тип доставки | После `Picking` | Пропускаемые статусы |
+|---|---|---|
+| `selfPickup` — Самовывоз | → `AwaitingPickup(9)` | 6, 7, 8 |
+| `companyDelivery` — Доставка магазином | → `Delivering(8)` | 6, 7 |
+| `transportCompany` — Транспортная компания | → `TransferredToTransport(6)` → `DeliveringByTransport(7)` → `AwaitingPickup(9)` | 8 |
 
-- `PUT /api/v1/orders/{id}` — доступно **только** в статусе `Draft`.
-- Попытка изменить заказ в любом другом статусе возвращает `409 Conflict`.
-- При создании (`POST /api/v1/orders`) статус всегда устанавливается в `Draft` автоматически — передавать `status` в теле запроса не нужно.
+## API Endpoints
 
-## Ошибки при недопустимом переходе
+| Endpoint | Из | В | Описание |
+|---|---|---|---|
+| `POST /api/v1/orders/{id}/confirm` | `Draft` | `Processing` | Подтвердить черновик |
+| `POST /api/v1/orders/{id}/next-status?deliveryType=...` | Любой не-финальный | Следующий по логике | Продвинуть на следующий шаг |
+| `POST /api/v1/orders/{id}/cancel` | Любой не-финальный | `Cancelled` | Отменить заказ |
 
+### Параметр `deliveryType` (опциональный)
+- `selfPickup` — самовывоз
+- `companyDelivery` — доставка силами магазина
+- `transportCompany` — транспортная компания
+
+Если `deliveryType` не передан — используется базовая линейная последовательность.
+
+## Правила редактирования (`PUT /api/v1/orders/{id}`)
+
+Редактирование **заблокировано** начиная с момента передачи в доставку:
+
+| Статус | Редактирование |
+|--------|----------------|
+| `Draft` … `Picking` (0–5) | ✅ Разрешено |
+| `TransferredToTransport` (6) | ✅ Разрешено (ещё не у перевозчика) |
+| `DeliveringByTransport` (7) | ❌ **Заблокировано** |
+| `Delivering` (8) | ❌ **Заблокировано** |
+| `AwaitingPickup` (9) | ❌ **Заблокировано** |
+| `Completed` (10) | ❌ **Заблокировано** |
+| `Cancelled` (11) | ❌ **Заблокировано** |
+
+При попытке редактировать заблокированный заказ возвращается `409 Conflict`:
 ```json
-HTTP 409 Conflict
 {
   "error": {
-    "code": "invalid_transition",
-    "message": "Переход Confirm возможен только из статуса Draft. Текущий статус: Confirmed."
+    "code": "invalid_state",
+    "message": "Нельзя редактировать заказ в статусе 'Delivering'. Редактирование заблокировано после передачи в доставку."
   }
 }
 ```
+
+## Создание заказа
+
+- `POST /api/v1/orders` — статус всегда автоматически устанавливается в `Draft(0)`.
+- Поле `status` в теле запроса не принимается.
+
+## Финальные статусы
+
+`Completed(10)` и `Cancelled(11)` — финальные, переходы из них невозможны.
+
+---
 
 ## Статусы других документов
 
 ### Invoice (Счёт)
 
 ```
-Draft ──► Issued ──► Closed
-  │          │
-  ▼          ▼
-Cancelled  Cancelled
+Draft(1) ──► Issued(2) ──► Closed(3)
+  │               │
+  ▼               ▼
+Cancelled(4)   Cancelled(4)
 ```
-
-| Значение | Код |
-|----------|-----|
-| `Draft` | 1 |
-| `Issued` | 2 |
-| `Closed` | 3 |
-| `Cancelled` | 4 |
 
 ### UPD (УПД)
 
 ```
-Draft ──► Registered ──► Completed
-  │            │
-  ▼            ▼
-Cancelled   Cancelled
+Draft(1) ──► Registered(2) ──► Completed(3)
+  │               │
+  ▼               ▼
+Cancelled(4)   Cancelled(4)
 ```
-
-| Значение | Код |
-|----------|-----|
-| `Draft` | 1 |
-| `Registered` | 2 |
-| `Completed` | 3 |
-| `Cancelled` | 4 |
 
 ### Payment (Платёж)
 
 ```
-Draft ──► Posted
-  │          │
-  ▼          ▼
-Cancelled  Cancelled
+Draft(1) ──► Posted(2)
+  │               │
+  ▼               ▼
+Cancelled(3)   Cancelled(3)
 ```
-
-| Значение | Код |
-|----------|-----|
-| `Draft` | 1 |
-| `Posted` | 2 |
-| `Cancelled` | 3 |

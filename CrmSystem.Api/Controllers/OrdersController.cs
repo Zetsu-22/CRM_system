@@ -102,8 +102,8 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return NotFound();
 
-        if (entity.Status != OrderStatus.Draft)
-            return Conflict(new { error = new { code = "invalid_state", message = $"Нельзя редактировать заказ в статусе '{entity.Status}'. Редактирование доступно только в статусе Draft." } });
+        if (IsLocked(entity.Status))
+            return Conflict(new { error = new { code = "invalid_state", message = $"Нельзя редактировать заказ в статусе '{entity.Status}'. Редактирование заблокировано после передачи в доставку." } });
 
         entity.Number = dto.Number;
         entity.Date = dto.Date;
@@ -153,64 +153,94 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
         return Ok(ToResponse(entity));
     }
 
-    // POST /orders/{id}/confirm  — Draft → Confirmed
+    // Статусы, после которых заказ нельзя редактировать (уже в доставке)
+    static bool IsLocked(OrderStatus s) =>
+        s == OrderStatus.DeliveringByTransport ||
+        s == OrderStatus.Delivering ||
+        s == OrderStatus.AwaitingPickup ||
+        s == OrderStatus.Completed ||
+        s == OrderStatus.Cancelled;
+
+    // POST /orders/{id}/confirm  — Draft → Processing
     [HttpPost("{id:guid}/confirm")]
     public async Task<IActionResult> Confirm(Guid id, CancellationToken ct)
     {
         var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return NotFound();
         if (entity.Status != OrderStatus.Draft)
-            return Conflict(new { error = new { code = "invalid_transition", message = $"Переход Confirm возможен только из статуса Draft. Текущий статус: {entity.Status}." } });
+            return Conflict(new { error = new { code = "invalid_transition", message = $"Подтверждение возможно только из статуса Draft. Текущий статус: {entity.Status}." } });
 
-        entity.Status = OrderStatus.Confirmed;
+        entity.Status = OrderStatus.Processing;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         return Ok(new { id = entity.Id, status = entity.Status });
     }
 
-    // POST /orders/{id}/fulfill  — Confirmed → Fulfilled
-    [HttpPost("{id:guid}/fulfill")]
-    public async Task<IActionResult> Fulfill(Guid id, CancellationToken ct)
-    {
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (entity is null) return NotFound();
-        if (entity.Status != OrderStatus.Confirmed)
-            return Conflict(new { error = new { code = "invalid_transition", message = $"Переход Fulfill возможен только из статуса Confirmed. Текущий статус: {entity.Status}." } });
-
-        entity.Status = OrderStatus.Fulfilled;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Ok(new { id = entity.Id, status = entity.Status });
-    }
-
-    // POST /orders/{id}/close  — Confirmed или Fulfilled → Closed
-    [HttpPost("{id:guid}/close")]
-    public async Task<IActionResult> Close(Guid id, CancellationToken ct)
-    {
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (entity is null) return NotFound();
-        if (entity.Status != OrderStatus.Confirmed && entity.Status != OrderStatus.Fulfilled)
-            return Conflict(new { error = new { code = "invalid_transition", message = $"Переход Close возможен только из статусов Confirmed или Fulfilled. Текущий статус: {entity.Status}." } });
-
-        entity.Status = OrderStatus.Closed;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Ok(new { id = entity.Id, status = entity.Status });
-    }
-
-    // POST /orders/{id}/cancel  — Draft или Confirmed → Cancelled
+    // POST /orders/{id}/cancel  — любой не-финальный → Cancelled
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
         var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return NotFound();
-        if (entity.Status != OrderStatus.Draft && entity.Status != OrderStatus.Confirmed)
-            return Conflict(new { error = new { code = "invalid_transition", message = $"Отмена возможна только из статусов Draft или Confirmed. Текущий статус: {entity.Status}." } });
+        if (entity.Status == OrderStatus.Completed || entity.Status == OrderStatus.Cancelled)
+            return Conflict(new { error = new { code = "invalid_transition", message = $"Нельзя отменить заказ в финальном статусе '{entity.Status}'." } });
 
         entity.Status = OrderStatus.Cancelled;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         return Ok(new { id = entity.Id, status = entity.Status });
+    }
+
+    // POST /orders/{id}/next-status?deliveryType=selfPickup|companyDelivery|transportCompany
+    // Переводит заказ на следующий статус с учётом типа доставки
+    [HttpPost("{id:guid}/next-status")]
+    public async Task<IActionResult> NextStatus(Guid id, [FromQuery] string? deliveryType, CancellationToken ct)
+    {
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity is null) return NotFound();
+
+        if (entity.Status == OrderStatus.Completed || entity.Status == OrderStatus.Cancelled)
+            return Conflict(new { error = new { code = "invalid_transition", message = $"Заказ в финальном статусе '{entity.Status}', переход невозможен." } });
+
+        var next = GetNextStatus(entity.Status, deliveryType);
+        if (next is null)
+            return Conflict(new { error = new { code = "invalid_transition", message = $"Нет следующего статуса для '{entity.Status}'." } });
+
+        entity.Status = next.Value;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Ok(new { id = entity.Id, status = entity.Status });
+    }
+
+    static OrderStatus? GetNextStatus(OrderStatus current, string? deliveryType)
+    {
+        // selfPickup: после Picking → AwaitingPickup (пропускаем транспортные и Delivering)
+        if (deliveryType == "selfPickup" && current == OrderStatus.Picking)
+            return OrderStatus.AwaitingPickup;
+
+        // companyDelivery: после Picking → Delivering (пропускаем транспортные)
+        if (deliveryType == "companyDelivery" && current == OrderStatus.Picking)
+            return OrderStatus.Delivering;
+
+        // transportCompany: Picking → TransferredToTransport → DeliveringByTransport → AwaitingPickup
+        // Delivering не используется при транспортной компании
+        if (deliveryType == "transportCompany" && current == OrderStatus.DeliveringByTransport)
+            return OrderStatus.AwaitingPickup;
+
+        // Базовый линейный переход по порядку enum (0..11)
+        var next = (OrderStatus)((int)current + 1);
+        if (!Enum.IsDefined(typeof(OrderStatus), next)) return null;
+
+        // Пропускаем Delivering при transportCompany
+        if (deliveryType == "transportCompany" && next == OrderStatus.Delivering)
+            return OrderStatus.AwaitingPickup;
+
+        // Пропускаем транспортные статусы при selfPickup/companyDelivery
+        if ((deliveryType == "selfPickup" || deliveryType == "companyDelivery") &&
+            (next == OrderStatus.TransferredToTransport || next == OrderStatus.DeliveringByTransport))
+            return GetNextStatus(next, deliveryType); // рекурсивно пропускаем
+
+        return next;
     }
 
     [HttpDelete("{id:guid}")]
