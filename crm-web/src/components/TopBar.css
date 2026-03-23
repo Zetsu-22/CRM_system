@@ -1,48 +1,120 @@
+/* ══════════════════════════════
+   TOPBAR (fimbiz AppHeader style)
+   ══════════════════════════════ */
+
 .topBar {
-  height: 48px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  height: var(--header-height, 56px);
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
   gap: 12px;
+  padding: 0 20px;
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 50;
   flex-shrink: 0;
 }
 
+/* ── Left: company badge ── */
 .topBarLeft {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
+.topBarCompanyBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+}
+
+.topBarCompanyIcon { color: hsl(var(--primary)); flex-shrink: 0; }
+
 .topBarCompany {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text);
+  color: hsl(var(--foreground));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 200px;
 }
 
-/* ── Org filter button ── */
-.topBarOrgWrap {
+/* ── Center: search ── */
+.topBarSearch {
+  flex: 1;
+  max-width: 360px;
   position: relative;
+  display: flex;
+  align-items: center;
 }
+
+.topBarSearchIcon {
+  position: absolute;
+  left: 10px;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+
+.topBarSearchInput {
+  width: 100%;
+  padding: 7px 32px 7px 32px;
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--input));
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.topBarSearchInput::placeholder { color: hsl(var(--muted-foreground)); }
+.topBarSearchInput:focus {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+  background: hsl(var(--card));
+}
+
+.topBarSearchClear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+.topBarSearchClear:hover { color: hsl(var(--foreground)); }
+
+/* ── Right ── */
+.topBarRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ── Org filter ── */
+.topBarOrgWrap { position: relative; }
 
 .topBarOrgBtn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
+  gap: 6px;
+  padding: 6px 12px;
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  color: hsl(var(--foreground));
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
@@ -52,36 +124,38 @@
 
 .topBarOrgBtn:hover,
 .topBarOrgBtn.active {
-  background: rgba(120,148,255,0.1);
-  border-color: rgba(120,148,255,0.4);
+  background: hsl(var(--primary) / 0.08);
+  border-color: hsl(var(--primary) / 0.4);
+  color: hsl(var(--primary));
 }
 
-.topBarOrgCount {
-  font-weight: 600;
-  font-size: 13px;
-  min-width: 14px;
-  text-align: center;
-}
+.topBarOrgLabel { font-size: 13px; font-weight: 500; }
 
 .topBarOrgDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #4f6ef7;
+  background: hsl(var(--primary));
   flex-shrink: 0;
 }
+
+.topBarOrgChevron {
+  color: hsl(var(--muted-foreground));
+  transition: transform 0.2s;
+}
+.topBarOrgChevron.open { transform: rotate(180deg); }
 
 /* ── Dropdown ── */
 .topBarOrgDropdown {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  width: 260px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  z-index: 200;
+  width: 240px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  z-index: 300;
   overflow: hidden;
 }
 
@@ -89,27 +163,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px 8px;
+  padding: 8px 12px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: hsl(var(--muted-foreground));
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .topBarOrgSelectAll {
   background: none;
   border: none;
-  color: #4f6ef7;
+  color: hsl(var(--primary));
   font-size: 12px;
   cursor: pointer;
   padding: 0;
   font-family: inherit;
+  font-weight: 500;
 }
+.topBarOrgSelectAll:hover { text-decoration: underline; }
 
 .topBarOrgList {
-  padding: 6px 0;
+  padding: 4px 0;
   max-height: 260px;
   overflow-y: auto;
 }
@@ -118,41 +194,34 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 14px;
+  padding: 8px 12px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--text);
-  transition: background 0.12s;
+  color: hsl(var(--foreground));
+  transition: background 0.1s;
 }
-
-.topBarOrgItem:hover {
-  background: rgba(255,255,255,0.04);
-}
+.topBarOrgItem:hover { background: hsl(var(--muted)); }
 
 .topBarOrgItem input[type="checkbox"] {
   width: 15px;
   height: 15px;
-  accent-color: #4f6ef7;
+  accent-color: hsl(var(--primary));
   cursor: pointer;
   flex-shrink: 0;
 }
 
-.topBarOrgName {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.topBarOrgName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .topBarOrgDefault {
   font-size: 11px;
-  color: #2ac36a;
+  color: hsl(var(--success));
+  font-weight: 500;
   flex-shrink: 0;
 }
 
 .topBarOrgEmpty {
   padding: 14px;
   text-align: center;
-  color: var(--text-muted);
+  color: hsl(var(--muted-foreground));
   font-size: 13px;
 }

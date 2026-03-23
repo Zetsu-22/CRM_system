@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Building2, Landmark, ChevronDown, Search, X } from 'lucide-react'
 import { useAuth } from '../AuthContext'
 import { useOrganizations } from '../OrganizationContext'
 import './TopBar.css'
@@ -36,67 +37,89 @@ export function TopBar() {
 
   const selectAll = () => setSelectedIds([])
 
+  const [search, setSearch] = useState('')
+
   if (!profile?.companyId) return null
 
   return (
     <header className="topBar">
+      {/* ── Left: company badge ── */}
       <div className="topBarLeft">
-        <span className="topBarCompany">{companyName}</span>
+        <div className="topBarCompanyBadge">
+          <Building2 size={14} className="topBarCompanyIcon" />
+          <span className="topBarCompany">{companyName}</span>
+        </div>
       </div>
 
-      {hasOrgs && (
-        <div className="topBarOrgWrap" ref={ref}>
-          <button
-            className={`topBarOrgBtn${open ? ' active' : ''}`}
-            onClick={() => setOpen(o => !o)}
-            title="Фильтр по организациям"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-              <polyline points="9 22 9 12 15 12 15 22"/>
-            </svg>
-            <span className="topBarOrgCount">{displayCount}</span>
-            {!isAllSelected && <span className="topBarOrgDot" />}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2 }}>
-              <polyline points={open ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-            </svg>
+      {/* ── Center: search ── */}
+      <div className="topBarSearch">
+        <Search size={14} className="topBarSearchIcon" />
+        <input
+          className="topBarSearchInput"
+          placeholder="Поиск..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {search && (
+          <button className="topBarSearchClear" onClick={() => setSearch('')}>
+            <X size={13} />
           </button>
+        )}
+      </div>
 
-          {open && (
-            <div className="topBarOrgDropdown">
-              <div className="topBarOrgHeader">
-                <span>Организации</span>
-                {!isAllSelected && (
-                  <button className="topBarOrgSelectAll" onClick={selectAll}>Все</button>
+      {/* ── Right: org filter ── */}
+      <div className="topBarRight">
+        {hasOrgs && (
+          <div className="topBarOrgWrap" ref={ref}>
+            <button
+              className={`topBarOrgBtn${open ? ' active' : ''}`}
+              onClick={() => setOpen(o => !o)}
+              title="Фильтр по организациям"
+            >
+              <Landmark size={14} />
+              <span className="topBarOrgLabel">
+                {isAllSelected ? 'Все организации' : `${displayCount} из ${organizations.length}`}
+              </span>
+              {!isAllSelected && <span className="topBarOrgDot" />}
+              <ChevronDown size={13} className={`topBarOrgChevron${open ? ' open' : ''}`} />
+            </button>
+
+            {open && (
+              <div className="topBarOrgDropdown">
+                <div className="topBarOrgHeader">
+                  <span>Организации</span>
+                  <button className="topBarOrgSelectAll" onClick={selectAll}>
+                    {isAllSelected ? 'Сбросить' : 'Все'}
+                  </button>
+                </div>
+                {isLoading ? (
+                  <div className="topBarOrgEmpty">Загрузка...</div>
+                ) : organizations.length === 0 ? (
+                  <div className="topBarOrgEmpty">Нет организаций</div>
+                ) : (
+                  <div className="topBarOrgList">
+                    {organizations.map(org => {
+                      const explicit = selectedIds.includes(org.id)
+                      const checked = isAllSelected || explicit
+                      return (
+                        <label key={org.id} className={`topBarOrgItem${checked ? ' checked' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(org.id)}
+                          />
+                          <span className="topBarOrgName">{org.name}</span>
+                          {org.isDefault && <span className="topBarOrgDefault">осн.</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
-              {isLoading ? (
-                <div className="topBarOrgEmpty">Загрузка...</div>
-              ) : organizations.length === 0 ? (
-                <div className="topBarOrgEmpty">Нет организаций</div>
-              ) : (
-                <div className="topBarOrgList">
-                  {organizations.map(org => {
-                    const checked = selectedIds.length === 0 || selectedIds.includes(org.id)
-                    const explicit = selectedIds.includes(org.id)
-                    return (
-                      <label key={org.id} className={`topBarOrgItem${checked ? ' checked' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected ? true : explicit}
-                          onChange={() => toggle(org.id)}
-                        />
-                        <span className="topBarOrgName">{org.name}</span>
-                        {org.isDefault && <span className="topBarOrgDefault">✓</span>}
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </header>
   )
 }
