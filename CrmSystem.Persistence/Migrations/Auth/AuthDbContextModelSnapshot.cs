@@ -77,6 +77,9 @@ namespace CrmSystem.Persistence.Migrations.Auth
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -154,6 +157,9 @@ namespace CrmSystem.Persistence.Migrations.Auth
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("CompanyId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -166,18 +172,59 @@ namespace CrmSystem.Persistence.Migrations.Auth
                         .HasColumnType("character varying(256)");
 
                     b.Property<string>("FullName")
-                        .HasColumnType("text");
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("IsAccessContractorDiscountEdit")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessContractors")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessContractorsEdit")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessFinancialJournal")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessNomenclature")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessNomenclatureEdit")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessOrdersEdit")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessWarehouses")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsBasicProfile")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsCompanyOwner")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsExpeditor")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsOrderPicker")
                         .HasColumnType("boolean");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
@@ -197,6 +244,47 @@ namespace CrmSystem.Persistence.Migrations.Auth
                         .IsUnique();
 
                     b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("CrmSystem.Persistence.Auth.AuthUserOrganization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "OrganizationId")
+                        .IsUnique();
+
+                    b.ToTable("user_organizations", (string)null);
                 });
 
             modelBuilder.Entity("CrmSystem.Persistence.Auth.AuthUserRole", b =>
@@ -242,6 +330,39 @@ namespace CrmSystem.Persistence.Migrations.Auth
                     b.ToTable("user_roles", (string)null);
                 });
 
+            modelBuilder.Entity("CrmSystem.Persistence.Auth.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("refresh_tokens", (string)null);
+                });
+
             modelBuilder.Entity("CrmSystem.Persistence.Auth.AuthRolePermission", b =>
                 {
                     b.HasOne("CrmSystem.Persistence.Auth.AuthPermission", "Permission")
@@ -261,6 +382,17 @@ namespace CrmSystem.Persistence.Migrations.Auth
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("CrmSystem.Persistence.Auth.AuthUserOrganization", b =>
+                {
+                    b.HasOne("CrmSystem.Persistence.Auth.AuthUser", "User")
+                        .WithMany("OrganizationAccess")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("CrmSystem.Persistence.Auth.AuthUserRole", b =>
                 {
                     b.HasOne("CrmSystem.Persistence.Auth.AuthRole", "Role")
@@ -270,12 +402,23 @@ namespace CrmSystem.Persistence.Migrations.Auth
                         .IsRequired();
 
                     b.HasOne("CrmSystem.Persistence.Auth.AuthUser", "User")
-                        .WithMany("Roles")
+                        .WithMany("UserRoles")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("CrmSystem.Persistence.Auth.RefreshToken", b =>
+                {
+                    b.HasOne("CrmSystem.Persistence.Auth.AuthUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });
@@ -294,7 +437,9 @@ namespace CrmSystem.Persistence.Migrations.Auth
 
             modelBuilder.Entity("CrmSystem.Persistence.Auth.AuthUser", b =>
                 {
-                    b.Navigation("Roles");
+                    b.Navigation("OrganizationAccess");
+
+                    b.Navigation("UserRoles");
                 });
 #pragma warning restore 612, 618
         }

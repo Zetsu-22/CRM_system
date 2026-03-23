@@ -1,5 +1,7 @@
+using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,30 +9,41 @@ namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/items")]
-public sealed class ItemsController(CrmDbContext db) : ControllerBase
+[Authorize]
+public sealed class ItemsController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
-        var list = await db.Items.OrderBy(x => x.Name).ToListAsync(ct);
+        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
+        if (!cu.IsAccessNomenclature) return Forbid();
+        var list = await db.Items
+            .Where(x => x.CompanyId == cu.CompanyId)
+            .OrderBy(x => x.Name)
+            .ToListAsync(ct);
         return Ok(list);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (cu.CompanyId is null) return NotFound();
+        if (!cu.IsAccessNomenclature) return Forbid();
+        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         return item is null ? NotFound() : Ok(item);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ItemDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessNomenclatureEdit) return Forbid();
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Item
         {
             Id = Guid.NewGuid(),
+            CompanyId = cu.CompanyId.Value,
             Type = dto.Type,
-            Sku = "ITEM-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
+            Sku = dto.Sku?.Trim() is { Length: > 0 } s ? s : "ITEM-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
             Barcode = dto.Barcode,
             Name = dto.Name,
             Description = dto.Description,
@@ -48,7 +61,8 @@ public sealed class ItemsController(CrmDbContext db) : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] ItemDto dto, CancellationToken ct)
     {
-        var entity = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessNomenclatureEdit) return Forbid();
+        var entity = await db.Items.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         entity.Type = dto.Type;
@@ -67,7 +81,8 @@ public sealed class ItemsController(CrmDbContext db) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var entity = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessNomenclatureEdit) return Forbid();
+        var entity = await db.Items.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -78,6 +93,7 @@ public sealed class ItemsController(CrmDbContext db) : ControllerBase
 
 public sealed record ItemDto(
     ItemType Type,
+    string? Sku,
     string? Barcode,
     string Name,
     string? Description,

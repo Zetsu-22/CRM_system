@@ -1,5 +1,7 @@
+using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,28 +9,39 @@ namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/warehouses")]
-public sealed class WarehousesController(CrmDbContext db) : ControllerBase
+[Authorize]
+public sealed class WarehousesController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
-        var list = await db.Warehouses.OrderBy(x => x.Name).ToListAsync(ct);
+        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
+        if (!cu.IsAccessWarehouses) return Forbid();
+        var list = await db.Warehouses
+            .Where(x => x.CompanyId == cu.CompanyId)
+            .OrderBy(x => x.Name)
+            .ToListAsync(ct);
         return Ok(list);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var item = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (cu.CompanyId is null) return NotFound();
+        if (!cu.IsAccessWarehouses) return Forbid();
+        var item = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         return item is null ? NotFound() : Ok(item);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] WarehouseDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessWarehouses) return Forbid();
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Warehouse
         {
             Id = Guid.NewGuid(),
+            CompanyId = cu.CompanyId.Value,
             Name = dto.Name,
             Address = dto.Address,
             IsDefault = dto.IsDefault,
@@ -43,7 +56,8 @@ public sealed class WarehousesController(CrmDbContext db) : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] WarehouseDto dto, CancellationToken ct)
     {
-        var entity = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessWarehouses) return Forbid();
+        var entity = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         entity.Name = dto.Name;
@@ -58,7 +72,8 @@ public sealed class WarehousesController(CrmDbContext db) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var entity = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessWarehouses) return Forbid();
+        var entity = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -69,9 +84,12 @@ public sealed class WarehousesController(CrmDbContext db) : ControllerBase
     [HttpGet("stock")]
     public async Task<IActionResult> GetStock(CancellationToken ct)
     {
+        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
+        if (!cu.IsAccessWarehouses) return Forbid();
         var list = await db.StockBalances
             .Include(x => x.Warehouse)
             .Include(x => x.Item)
+            .Where(x => x.Warehouse!.CompanyId == cu.CompanyId)
             .OrderBy(x => x.Warehouse!.Name)
             .ThenBy(x => x.Item!.Name)
             .ToListAsync(ct);

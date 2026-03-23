@@ -16,10 +16,28 @@ public sealed class Company : AuditableEntity
     public string? CorrAccount { get; set; }
 
     public bool VatPayer { get; set; }
+
+    public ICollection<Organization> Organizations { get; set; } = new List<Organization>();
+}
+
+/// <summary>
+/// Подразделение/филиал внутри Company.
+/// Пользователям назначаются организации — они видят только их данные (если не IsCompanyOwner).
+/// </summary>
+public sealed class Organization : AuditableEntity
+{
+    public Guid CompanyId { get; set; }
+    public Company? Company { get; set; }
+
+    public required string Name { get; set; }
+    public string? Address { get; set; }
+    public bool IsDefault { get; set; }
 }
 
 public sealed class Counterparty : AuditableEntity
 {
+    public Guid CompanyId { get; set; }
+
     public CounterpartyType Type { get; set; }
     public CounterpartyStatus Status { get; set; }
 
@@ -63,6 +81,8 @@ public sealed class CounterpartyContact : AuditableEntity
 
 public sealed class Item : AuditableEntity
 {
+    public Guid CompanyId { get; set; }
+
     public ItemType Type { get; set; }
     public required string Sku { get; set; }
     public string? Barcode { get; set; }
@@ -78,6 +98,8 @@ public sealed class Item : AuditableEntity
 
 public sealed class Warehouse : AuditableEntity
 {
+    public Guid CompanyId { get; set; }
+
     public required string Name { get; set; }
     public string? Address { get; set; }
     public bool IsDefault { get; set; }

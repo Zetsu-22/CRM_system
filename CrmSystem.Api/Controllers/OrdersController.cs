@@ -1,5 +1,7 @@
+using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +9,8 @@ namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/orders")]
-public sealed class OrdersController(CrmDbContext db) : ControllerBase
+[Authorize]
+public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
     static OrderResponse ToResponse(SalesOrder o) => new(
         o.Id, o.Number, o.Date, o.CompanyId, o.Company?.Name,
@@ -22,7 +25,9 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
+        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
         var list = await db.Orders
+            .Where(x => x.CompanyId == cu.CompanyId)
             .Include(x => x.Company)
             .Include(x => x.Counterparty)
             .Include(x => x.Lines).ThenInclude(l => l.Item)
@@ -34,23 +39,26 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        if (cu.CompanyId is null) return NotFound();
         var item = await db.Orders
             .Include(x => x.Company)
             .Include(x => x.Counterparty)
             .Include(x => x.Lines).ThenInclude(l => l.Item)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         return item is null ? NotFound() : Ok(ToResponse(item));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] SalesOrderDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessOrdersEdit) return Forbid();
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new SalesOrder
         {
             Id = Guid.NewGuid(),
             Number = dto.Number,
             Date = dto.Date,
-            CompanyId = dto.CompanyId,
+            CompanyId = cu.CompanyId.Value,
             CounterpartyId = dto.CounterpartyId,
             Status = OrderStatus.Draft,
             Comment = dto.Comment,
@@ -97,9 +105,10 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SalesOrderDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessOrdersEdit) return Forbid();
         var entity = await db.Orders
             .Include(x => x.Lines)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         if (IsLocked(entity.Status))
@@ -107,7 +116,6 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
 
         entity.Number = dto.Number;
         entity.Date = dto.Date;
-        entity.CompanyId = dto.CompanyId;
         entity.CounterpartyId = dto.CounterpartyId;
         entity.Comment = dto.Comment;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -165,7 +173,8 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpPost("{id:guid}/confirm")]
     public async Task<IActionResult> Confirm(Guid id, CancellationToken ct)
     {
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessOrdersEdit) return Forbid();
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         if (entity.Status != OrderStatus.Draft)
             return Conflict(new { error = new { code = "invalid_transition", message = $"Подтверждение возможно только из статуса Draft. Текущий статус: {entity.Status}." } });
@@ -180,7 +189,8 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessOrdersEdit) return Forbid();
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         if (entity.Status == OrderStatus.Completed || entity.Status == OrderStatus.Cancelled)
             return Conflict(new { error = new { code = "invalid_transition", message = $"Нельзя отменить заказ в финальном статусе '{entity.Status}'." } });
@@ -196,7 +206,8 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpPost("{id:guid}/next-status")]
     public async Task<IActionResult> NextStatus(Guid id, [FromQuery] string? deliveryType, CancellationToken ct)
     {
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessOrdersEdit) return Forbid();
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         if (entity.Status == OrderStatus.Completed || entity.Status == OrderStatus.Cancelled)
@@ -246,7 +257,8 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessOrdersEdit) return Forbid();
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -258,7 +270,6 @@ public sealed class OrdersController(CrmDbContext db) : ControllerBase
 public sealed record SalesOrderDto(
     string? Number,
     DateOnly Date,
-    Guid CompanyId,
     Guid CounterpartyId,
     string? Comment,
     List<SalesOrderLineDto> Lines);

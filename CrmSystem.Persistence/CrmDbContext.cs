@@ -6,6 +6,7 @@ namespace CrmSystem.Persistence;
 public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbContext(options)
 {
     public DbSet<Company> Companies => Set<Company>();
+    public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<Counterparty> Counterparties => Set<Counterparty>();
     public DbSet<CounterpartyAddress> CounterpartyAddresses => Set<CounterpartyAddress>();
     public DbSet<CounterpartyContact> CounterpartyContacts => Set<CounterpartyContact>();
@@ -62,6 +63,19 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
         });
+
+        modelBuilder.Entity<Organization>(b =>
+        {
+            b.ToTable("organizations");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Name).HasMaxLength(256);
+            ConfigureXminConcurrency(b);
+            b.HasQueryFilter(x => !x.IsDeleted);
+
+            b.HasOne(x => x.Company)
+                .WithMany(x => x.Organizations)
+                .HasForeignKey(x => x.CompanyId);
+        });
     }
 
     private static void ConfigureCounterparty(ModelBuilder modelBuilder)
@@ -71,6 +85,7 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.ToTable("counterparties");
             b.HasKey(x => x.Id);
             b.Property(x => x.Name).HasMaxLength(256);
+            b.HasIndex(x => x.CompanyId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
         });
@@ -109,7 +124,8 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.Property(x => x.Sku).HasMaxLength(64);
             b.Property(x => x.Name).HasMaxLength(256);
             b.Property(x => x.Unit).HasMaxLength(32);
-            b.HasIndex(x => x.Sku).IsUnique();
+            b.HasIndex(x => new { x.CompanyId, x.Sku }).IsUnique();
+            b.HasIndex(x => x.CompanyId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
         });
@@ -122,6 +138,7 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.ToTable("warehouses");
             b.HasKey(x => x.Id);
             b.Property(x => x.Name).HasMaxLength(256);
+            b.HasIndex(x => x.CompanyId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
         });

@@ -1,5 +1,7 @@
+using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,50 +9,45 @@ namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/companies")]
-public sealed class CompaniesController(CrmDbContext db) : ControllerBase
+[Authorize]
+public sealed class CompaniesController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
+    // GET /companies — возвращает компанию текущего пользователя
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
-        var list = await db.Companies.OrderBy(x => x.Name).ToListAsync(ct);
+        var cid = cu.CompanyId;
+        var list = await db.Companies
+            .Where(x => x.Id == cid)
+            .OrderBy(x => x.Name)
+            .ToListAsync(ct);
         return Ok(list);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        if (id != cu.CompanyId) return Forbid();
         var item = await db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
         return item is null ? NotFound() : Ok(item);
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CompanyDto dto, CancellationToken ct)
+    // GET /companies/mine — удобный алиас для получения своей компании
+    [HttpGet("mine")]
+    public async Task<IActionResult> GetMine(CancellationToken ct)
     {
-        var entity = new Company
-        {
-            Id = Guid.NewGuid(),
-            Name = dto.Name,
-            Inn = dto.Inn,
-            Kpp = dto.Kpp,
-            Ogrn = dto.Ogrn,
-            LegalAddress = dto.LegalAddress,
-            ActualAddress = dto.ActualAddress,
-            BankName = dto.BankName,
-            Bik = dto.Bik,
-            AccountNumber = dto.AccountNumber,
-            CorrAccount = dto.CorrAccount,
-            VatPayer = dto.VatPayer,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
-        db.Companies.Add(entity);
-        await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
+        if (cu.CompanyId is null) return NotFound(new { error = "Пользователь не привязан к компании" });
+        var item = await db.Companies.FirstOrDefaultAsync(x => x.Id == cu.CompanyId, ct);
+        return item is null ? NotFound() : Ok(item);
     }
 
+    // PUT /companies/{id} — только владелец может обновить реквизиты компании
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] CompanyDto dto, CancellationToken ct)
     {
+        if (!cu.IsCompanyOwner) return Forbid();
+        if (id != cu.CompanyId) return Forbid();
+
         var entity = await db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return NotFound();
 
@@ -69,17 +66,6 @@ public sealed class CompaniesController(CrmDbContext db) : ControllerBase
 
         await db.SaveChangesAsync(ct);
         return Ok(entity);
-    }
-
-    [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
-    {
-        var entity = await db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (entity is null) return NotFound();
-        entity.IsDeleted = true;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return NoContent();
     }
 }
 

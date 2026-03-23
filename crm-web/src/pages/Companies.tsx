@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Company {
@@ -26,24 +28,26 @@ const empty = (): Omit<Company, 'id'> => ({
 })
 
 export function CompaniesPage() {
+  const { hasCompany, profile } = useAuth()
+  const navigate = useNavigate()
   const [items, setItems] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
+  const [modal, setModal] = useState<'edit' | null>(null)
   const [selected, setSelected] = useState<Company | null>(null)
   const [form, setForm] = useState(empty())
   const [saving, setSaving] = useState(false)
+  const [seeding, setSeeding] = useState(false)
 
   const load = () => {
     setLoading(true)
     api.get<Company[]>('/companies')
       .then(setItems)
-      .catch(() => toast('error', 'Не удалось загрузить организации'))
+      .catch(() => toast('error', 'Не удалось загрузить компании'))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setForm(empty()); setModal('create') }
   const openEdit = (c: Company) => {
     setSelected(c)
     setForm({ name: c.name, inn: c.inn ?? '', kpp: c.kpp ?? '', ogrn: c.ogrn ?? '',
@@ -52,48 +56,70 @@ export function CompaniesPage() {
       corrAccount: c.corrAccount ?? '', vatPayer: c.vatPayer })
     setModal('edit')
   }
-  const openDelete = (c: Company) => { setSelected(c); setModal('delete') }
   const closeModal = () => { setModal(null); setSelected(null) }
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast('error', 'Название обязательно'); return }
     setSaving(true)
     try {
-      if (modal === 'create') {
-        await api.post('/companies', form)
-        toast('success', 'Организация создана')
-      } else {
-        await api.put(`/companies/${selected!.id}`, form)
-        toast('success', 'Организация обновлена')
-      }
+      await api.put(`/companies/${selected!.id}`, form)
+      toast('success', 'Компания обновлена')
       load(); closeModal()
     } catch (e: any) {
       toast('error', e.message ?? 'Ошибка сохранения')
     } finally { setSaving(false) }
   }
 
-  const handleDelete = async () => {
-    if (!selected) return
-    setSaving(true)
-    try {
-      await api.delete(`/companies/${selected.id}`)
-      toast('success', 'Организация удалена')
-      load(); closeModal()
-    } catch (e: any) {
-      toast('error', e.message ?? 'Ошибка удаления')
-    } finally { setSaving(false) }
-  }
-
   const f = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
+  const handleSeed = async () => {
+    if (!(import.meta as any).env?.DEV) return
+    if (seeding) return
+    const ok = window.confirm('Создать тестовые данные в БД для компании?')
+    if (!ok) return
+    setSeeding(true)
+    try {
+      await api.post('/dev/seed-test-company', {
+        companyName: profile?.companyName ?? 'Тестовая компния',
+        force: false,
+      })
+      toast('success', 'Тестовые данные созданы')
+    } catch (e: any) {
+      toast('error', e.message ?? 'Не удалось создать тестовые данные')
+    } finally {
+      setSeeding(false)
+    }
+  }
+
+  const actions = hasCompany
+    ? (
+      (import.meta as any).env?.DEV
+        ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button className="btn btn-secondary" onClick={handleSeed} disabled={seeding}>
+              {seeding ? 'Заполнение…' : 'Заполнить тестовыми данными'}
+            </button>
+          </div>
+        )
+        : null
+    )
+    : (
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="btn btn-primary" onClick={() => navigate('/setup-company')}>Создать компанию</button>
+        {(import.meta as any).env?.DEV && (
+          <button className="btn btn-secondary" onClick={handleSeed} disabled={seeding}>
+            {seeding ? 'Заполнение…' : 'Заполнить тестовыми данными'}
+          </button>
+        )}
+      </div>
+    )
+
   return (
-    <PageLayout title="Организации" actions={
-      <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button>
-    }>
+    <PageLayout title="Компания" actions={actions}>
       <div className="tableWrap">
         {loading ? <div className="tableLoading">Загрузка…</div> : items.length === 0 ? (
-          <div className="tableEmpty">Нет организаций</div>
+          <div className="tableEmpty">Компания не создана</div>
         ) : (
           <table className="crmTable">
             <thead><tr>
@@ -110,7 +136,6 @@ export function CompaniesPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>Изменить</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => openDelete(c)}>Удалить</button>
                     </div>
                   </td>
                 </tr>
@@ -120,8 +145,8 @@ export function CompaniesPage() {
         )}
       </div>
 
-      {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'Новая организация' : 'Редактировать организацию'} onClose={closeModal} width={640}>
+      {modal === 'edit' && (
+        <Modal title="Редактировать компанию" onClose={closeModal} width={640}>
           <div className="formGrid">
             <div className="formGroup full"><label className="formLabel">Название *</label>
               <input className="formInput" value={form.name} onChange={f('name')} /></div>
@@ -151,18 +176,6 @@ export function CompaniesPage() {
           <div className="formActions">
             <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
-          </div>
-        </Modal>
-      )}
-
-      {modal === 'delete' && selected && (
-        <Modal title="Удалить организацию?" onClose={closeModal} width={400}>
-          <div className="confirmBox">
-            <p>Вы уверены, что хотите удалить <strong>{selected.name}</strong>?</p>
-            <div className="confirmActions">
-              <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>
-              <button className="btn btn-danger" onClick={handleDelete} disabled={saving}>{saving ? 'Удаление…' : 'Удалить'}</button>
-            </div>
           </div>
         </Modal>
       )}

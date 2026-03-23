@@ -21,6 +21,163 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* ── Profile Switcher ── */
+.profileSwitcher {
+  position: relative;
+  padding: 8px 8px 0;
+}
+
+.profileSwitcherBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(120,148,255,0.06);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.profileSwitcherBtn:hover {
+  background: rgba(120,148,255,0.12);
+  border-color: rgba(120,148,255,0.3);
+}
+.profileSwitcherBtn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.profileSwitcherAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #7894ff, #5a6fff);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profileSwitcherInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.profileSwitcherName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e4f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileSwitcherRole {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.profileSwitcherChevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.profileDropdown {
+  position: absolute;
+  top: 100%;
+  left: 8px;
+  right: 8px;
+  margin-top: 4px;
+  background: #1a1f30;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.profileDropdownTitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 8px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profileDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+.profileDropdownItem:hover:not(:disabled) {
+  background: rgba(120,148,255,0.1);
+}
+.profileDropdownItem.active {
+  background: rgba(120,148,255,0.15);
+}
+.profileDropdownItem:disabled {
+  cursor: default;
+}
+
+.profileDropdownAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(120,148,255,0.2);
+  color: #7894ff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profileDropdownInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.profileDropdownName {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e0e4f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileDropdownRole {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.profileDropdownCheck {
+  color: #7894ff;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 .sidebarNav {
   display: flex;
   flex-direction: column;
@@ -62,4 +219,52 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sidebarFooter {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 12px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebarUser {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebarUserName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e4f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebarUserRole {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sidebarLogout {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 18px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: color 0.12s, background 0.12s;
+}
+
+.sidebarLogout:hover {
+  color: #ff6b6b;
+  background: rgba(255,107,107,0.1);
 }

@@ -1,5 +1,7 @@
+using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,12 +9,16 @@ namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/invoices")]
-public sealed class InvoicesController(CrmDbContext db) : ControllerBase
+[Authorize]
+public sealed class InvoicesController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
+        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
+        if (!cu.IsAccessFinancialJournal) return Forbid();
         var list = await db.Invoices
+            .Where(x => x.CompanyId == cu.CompanyId)
             .Include(x => x.Lines)
             .OrderByDescending(x => x.Date)
             .ToListAsync(ct);
@@ -22,21 +28,25 @@ public sealed class InvoicesController(CrmDbContext db) : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        if (cu.CompanyId is null) return NotFound();
+        if (!cu.IsAccessFinancialJournal) return Forbid();
         var item = await db.Invoices
             .Include(x => x.Lines)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         return item is null ? NotFound() : Ok(item);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] InvoiceDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Invoice
         {
             Id = Guid.NewGuid(),
             Number = dto.Number,
             Date = dto.Date,
-            CompanyId = dto.CompanyId,
+            CompanyId = cu.CompanyId.Value,
             CounterpartyId = dto.CounterpartyId,
             OrderId = dto.OrderId,
             Status = dto.Status,
@@ -80,14 +90,14 @@ public sealed class InvoicesController(CrmDbContext db) : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] InvoiceDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessFinancialJournal) return Forbid();
         var entity = await db.Invoices
             .Include(x => x.Lines)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         entity.Number = dto.Number;
         entity.Date = dto.Date;
-        entity.CompanyId = dto.CompanyId;
         entity.CounterpartyId = dto.CounterpartyId;
         entity.OrderId = dto.OrderId;
         entity.Status = dto.Status;
@@ -131,7 +141,8 @@ public sealed class InvoicesController(CrmDbContext db) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var entity = await db.Invoices.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessFinancialJournal) return Forbid();
+        var entity = await db.Invoices.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -143,7 +154,6 @@ public sealed class InvoicesController(CrmDbContext db) : ControllerBase
 public sealed record InvoiceDto(
     string? Number,
     DateOnly Date,
-    Guid CompanyId,
     Guid CounterpartyId,
     Guid? OrderId,
     InvoiceStatus Status,

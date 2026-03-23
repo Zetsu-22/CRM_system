@@ -171,6 +171,8 @@
 .badge-red    { background: rgba(239,68,68,0.1);   border-color: rgba(239,68,68,0.4);   color: #ef4444; }
 .badge-blue   { background: rgba(120,148,255,0.1); border-color: rgba(120,148,255,0.4); color: #7894ff; }
 .badge-gray   { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); color: #94a3b8; }
+.badge-teal   { background: rgba(20,184,166,0.1);  border-color: rgba(20,184,166,0.3);  color: #14b8a6; }
+.badge-purple { background: rgba(168,85,247,0.1);  border-color: rgba(168,85,247,0.3);  color: #a855f7; }
 
 /* ---- Form actions row ---- */
 .formActions {

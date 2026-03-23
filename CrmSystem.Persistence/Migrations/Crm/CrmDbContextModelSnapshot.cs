@@ -95,6 +95,9 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -143,6 +146,8 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
 
                     b.ToTable("counterparties", (string)null);
                 });
@@ -383,6 +388,9 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<string>("Barcode")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -433,10 +441,60 @@ namespace CrmSystem.Persistence.Migrations.Crm
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Sku")
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("CompanyId", "Sku")
                         .IsUnique();
 
                     b.ToTable("items", (string)null);
+                });
+
+            modelBuilder.Entity("CrmSystem.Domain.Organization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.ToTable("organizations", (string)null);
                 });
 
             modelBuilder.Entity("CrmSystem.Domain.Payment", b =>
@@ -946,6 +1004,9 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<string>("Address")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -976,6 +1037,8 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
 
                     b.ToTable("warehouses", (string)null);
                 });
@@ -1011,6 +1074,17 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .IsRequired();
 
                     b.Navigation("Invoice");
+                });
+
+            modelBuilder.Entity("CrmSystem.Domain.Organization", b =>
+                {
+                    b.HasOne("CrmSystem.Domain.Company", "Company")
+                        .WithMany("Organizations")
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("CrmSystem.Domain.PaymentAllocation", b =>
@@ -1104,6 +1178,11 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .IsRequired();
 
                     b.Navigation("Upd");
+                });
+
+            modelBuilder.Entity("CrmSystem.Domain.Company", b =>
+                {
+                    b.Navigation("Organizations");
                 });
 
             modelBuilder.Entity("CrmSystem.Domain.Counterparty", b =>

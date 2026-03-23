@@ -1,5 +1,7 @@
+using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,12 +9,16 @@ namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/upds")]
-public sealed class UpdsController(CrmDbContext db) : ControllerBase
+[Authorize]
+public sealed class UpdsController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
+        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
+        if (!cu.IsAccessFinancialJournal) return Forbid();
         var list = await db.Upds
+            .Where(x => x.CompanyId == cu.CompanyId)
             .Include(x => x.Lines)
             .OrderByDescending(x => x.Date)
             .ToListAsync(ct);
@@ -22,21 +28,25 @@ public sealed class UpdsController(CrmDbContext db) : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        if (cu.CompanyId is null) return NotFound();
+        if (!cu.IsAccessFinancialJournal) return Forbid();
         var item = await db.Upds
             .Include(x => x.Lines)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         return item is null ? NotFound() : Ok(item);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] UpdDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Upd
         {
             Id = Guid.NewGuid(),
             Number = dto.Number,
             Date = dto.Date,
-            CompanyId = dto.CompanyId,
+            CompanyId = cu.CompanyId.Value,
             CounterpartyId = dto.CounterpartyId,
             OrderId = dto.OrderId,
             InvoiceId = dto.InvoiceId,
@@ -84,14 +94,14 @@ public sealed class UpdsController(CrmDbContext db) : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdDto dto, CancellationToken ct)
     {
+        if (!cu.IsAccessFinancialJournal) return Forbid();
         var entity = await db.Upds
             .Include(x => x.Lines)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         entity.Number = dto.Number;
         entity.Date = dto.Date;
-        entity.CompanyId = dto.CompanyId;
         entity.CounterpartyId = dto.CounterpartyId;
         entity.OrderId = dto.OrderId;
         entity.InvoiceId = dto.InvoiceId;
@@ -139,7 +149,8 @@ public sealed class UpdsController(CrmDbContext db) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var entity = await db.Upds.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (!cu.IsAccessFinancialJournal) return Forbid();
+        var entity = await db.Upds.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -151,7 +162,6 @@ public sealed class UpdsController(CrmDbContext db) : ControllerBase
 public sealed record UpdDto(
     string? Number,
     DateOnly Date,
-    Guid CompanyId,
     Guid CounterpartyId,
     Guid? OrderId,
     Guid? InvoiceId,
