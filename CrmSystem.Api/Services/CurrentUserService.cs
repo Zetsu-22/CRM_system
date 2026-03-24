@@ -52,7 +52,9 @@ public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor)
     public bool IsAccessNomenclature     => HasFullAccess || GetBool("IsAccessNomenclature");
     public bool IsAccessNomenclatureEdit => HasFullAccess || GetBool("IsAccessNomenclatureEdit");
     public bool IsAccessFinancialJournal => HasFullAccess || GetBool("IsAccessFinancialJournal");
+    public bool IsAccessFinancialJournalEdit => HasFullAccess || GetBool("IsAccessFinancialJournalEdit");
     public bool IsAccessWarehouses       => HasFullAccess || GetBool("IsAccessWarehouses");
+    public bool IsAccessWarehousesEdit   => HasFullAccess || GetBool("IsAccessWarehousesEdit");
 
     /// <summary>
     /// Может управлять пользователями компании (добавлять, редактировать права).

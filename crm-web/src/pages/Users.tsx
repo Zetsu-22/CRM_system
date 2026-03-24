@@ -27,7 +27,9 @@ interface UserDto {
   isAccessNomenclature: boolean
   isAccessNomenclatureEdit: boolean
   isAccessFinancialJournal: boolean
+  isAccessFinancialJournalEdit: boolean
   isAccessWarehouses: boolean
+  isAccessWarehousesEdit: boolean
 }
 
 type PermKey = keyof Omit<UserDto, 'id' | 'email' | 'fullName' | 'phone' | 'isActive' | 'companyId' | 'isCompanyOwner'>
@@ -47,7 +49,9 @@ const MODULE_SECTION: { key: PermKey; label: string }[] = [
   { key: 'isAccessNomenclature',           label: 'Номенклатура (просм.)' },
   { key: 'isAccessNomenclatureEdit',       label: 'Номенклатура (ред.)' },
   { key: 'isAccessFinancialJournal',       label: 'Финансовый журнал (счета, УПД, платежи)' },
+  { key: 'isAccessFinancialJournalEdit',   label: 'Финансы (ред.)' },
   { key: 'isAccessWarehouses',             label: 'Склады и остатки' },
+  { key: 'isAccessWarehousesEdit',         label: 'Склады (ред.)' },
 ]
 
 const ALL_PERM_KEYS: PermKey[] = [...ROLE_SECTION.map(r => r.key), ...MODULE_SECTION.map(m => m.key)]
@@ -67,7 +71,8 @@ const emptyPerms = (): Record<PermKey, boolean> => ({
   isExpeditor: false, isDriver: false,
   isAccessContractors: false, isAccessContractorsEdit: false, isAccessContractorDiscountEdit: false,
   isAccessNomenclature: false, isAccessNomenclatureEdit: false,
-  isAccessFinancialJournal: false, isAccessWarehouses: false,
+  isAccessFinancialJournal: false, isAccessFinancialJournalEdit: false,
+  isAccessWarehouses: false, isAccessWarehousesEdit: false,
 })
 
 export function UsersPage() {

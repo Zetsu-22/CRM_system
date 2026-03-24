@@ -36,7 +36,7 @@ public sealed class WarehousesController(CrmDbContext db, CurrentUserService cu)
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] WarehouseDto dto, CancellationToken ct)
     {
-        if (!cu.IsAccessWarehouses) return Forbid();
+        if (!cu.IsAccessWarehousesEdit) return Forbid();
         if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Warehouse
         {
@@ -56,7 +56,7 @@ public sealed class WarehousesController(CrmDbContext db, CurrentUserService cu)
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] WarehouseDto dto, CancellationToken ct)
     {
-        if (!cu.IsAccessWarehouses) return Forbid();
+        if (!cu.IsAccessWarehousesEdit) return Forbid();
         var entity = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
@@ -72,7 +72,7 @@ public sealed class WarehousesController(CrmDbContext db, CurrentUserService cu)
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        if (!cu.IsAccessWarehouses) return Forbid();
+        if (!cu.IsAccessWarehousesEdit) return Forbid();
         var entity = await db.Warehouses.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;

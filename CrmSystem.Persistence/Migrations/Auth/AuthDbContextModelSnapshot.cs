@@ -187,6 +187,9 @@ namespace CrmSystem.Persistence.Migrations.Auth
                     b.Property<bool>("IsAccessFinancialJournal")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsAccessFinancialJournalEdit")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsAccessNomenclature")
                         .HasColumnType("boolean");
 
@@ -197,6 +200,9 @@ namespace CrmSystem.Persistence.Migrations.Auth
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsAccessWarehouses")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAccessWarehousesEdit")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsActive")

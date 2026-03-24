@@ -80,7 +80,9 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
             IsAccessNomenclature = dto.IsAccessNomenclature,
             IsAccessNomenclatureEdit = dto.IsAccessNomenclatureEdit,
             IsAccessFinancialJournal = dto.IsAccessFinancialJournal,
+            IsAccessFinancialJournalEdit = dto.IsAccessFinancialJournalEdit,
             IsAccessWarehouses = dto.IsAccessWarehouses,
+            IsAccessWarehousesEdit = dto.IsAccessWarehousesEdit,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
@@ -115,7 +117,9 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
         user.IsAccessNomenclature = dto.IsAccessNomenclature;
         user.IsAccessNomenclatureEdit = dto.IsAccessNomenclatureEdit;
         user.IsAccessFinancialJournal = dto.IsAccessFinancialJournal;
+        user.IsAccessFinancialJournalEdit = dto.IsAccessFinancialJournalEdit;
         user.IsAccessWarehouses = dto.IsAccessWarehouses;
+        user.IsAccessWarehousesEdit = dto.IsAccessWarehousesEdit;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
         await auth.SaveChangesAsync(ct);
@@ -195,7 +199,8 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
         u.IsAccessOrdersEdit, u.IsOrderPicker, u.IsExpeditor, u.IsDriver,
         u.IsAccessContractors, u.IsAccessContractorsEdit, u.IsAccessContractorDiscountEdit,
         u.IsAccessNomenclature, u.IsAccessNomenclatureEdit,
-        u.IsAccessFinancialJournal, u.IsAccessWarehouses);
+        u.IsAccessFinancialJournal, u.IsAccessFinancialJournalEdit,
+        u.IsAccessWarehouses, u.IsAccessWarehousesEdit);
 }
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
@@ -205,7 +210,8 @@ public sealed record UserDto(
     bool IsAccessOrdersEdit, bool IsOrderPicker, bool IsExpeditor, bool IsDriver,
     bool IsAccessContractors, bool IsAccessContractorsEdit, bool IsAccessContractorDiscountEdit,
     bool IsAccessNomenclature, bool IsAccessNomenclatureEdit,
-    bool IsAccessFinancialJournal, bool IsAccessWarehouses);
+    bool IsAccessFinancialJournal, bool IsAccessFinancialJournalEdit,
+    bool IsAccessWarehouses, bool IsAccessWarehousesEdit);
 
 public sealed record CreateUserDto(
     string Email, string Password,
@@ -221,7 +227,9 @@ public sealed record CreateUserDto(
     bool IsAccessNomenclature = false,
     bool IsAccessNomenclatureEdit = false,
     bool IsAccessFinancialJournal = false,
-    bool IsAccessWarehouses = false);
+    bool IsAccessFinancialJournalEdit = false,
+    bool IsAccessWarehouses = false,
+    bool IsAccessWarehousesEdit = false);
 
 public sealed record UpdatePermissionsDto(
     bool IsBasicProfile,
@@ -235,7 +243,9 @@ public sealed record UpdatePermissionsDto(
     bool IsAccessNomenclature,
     bool IsAccessNomenclatureEdit,
     bool IsAccessFinancialJournal,
-    bool IsAccessWarehouses);
+    bool IsAccessFinancialJournalEdit,
+    bool IsAccessWarehouses,
+    bool IsAccessWarehousesEdit);
 
 public sealed record UpdateUserProfileDto(string? FullName, string? Phone);
 

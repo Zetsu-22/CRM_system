@@ -39,7 +39,7 @@ public sealed class InvoicesController(CrmDbContext db, CurrentUserService cu) :
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] InvoiceDto dto, CancellationToken ct)
     {
-        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (!cu.IsAccessFinancialJournalEdit) return Forbid();
         if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Invoice
         {
@@ -90,7 +90,7 @@ public sealed class InvoicesController(CrmDbContext db, CurrentUserService cu) :
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] InvoiceDto dto, CancellationToken ct)
     {
-        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (!cu.IsAccessFinancialJournalEdit) return Forbid();
         var entity = await db.Invoices
             .Include(x => x.Lines)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
@@ -141,7 +141,7 @@ public sealed class InvoicesController(CrmDbContext db, CurrentUserService cu) :
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (!cu.IsAccessFinancialJournalEdit) return Forbid();
         var entity = await db.Invoices.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;

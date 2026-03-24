@@ -28,7 +28,9 @@ export interface UserProfile {
   isAccessNomenclature: boolean
   isAccessNomenclatureEdit: boolean
   isAccessFinancialJournal: boolean
+  isAccessFinancialJournalEdit: boolean
   isAccessWarehouses: boolean
+  isAccessWarehousesEdit: boolean
   availableProfiles: CompanyProfile[]
 }
 

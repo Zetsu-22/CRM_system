@@ -102,7 +102,9 @@ public sealed class AuthController(
         user.IsAccessNomenclature = true;
         user.IsAccessNomenclatureEdit = true;
         user.IsAccessFinancialJournal = true;
+        user.IsAccessFinancialJournalEdit = true;
         user.IsAccessWarehouses = true;
+        user.IsAccessWarehousesEdit = true;
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await auth.SaveChangesAsync(ct);
 
@@ -227,7 +229,9 @@ public sealed class AuthController(
             IsAccessNomenclature = user.IsAccessNomenclature,
             IsAccessNomenclatureEdit = user.IsAccessNomenclatureEdit,
             IsAccessFinancialJournal = user.IsAccessFinancialJournal,
+            IsAccessFinancialJournalEdit = user.IsAccessFinancialJournalEdit,
             IsAccessWarehouses = user.IsAccessWarehouses,
+            IsAccessWarehousesEdit = user.IsAccessWarehousesEdit,
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt,
         };
@@ -304,7 +308,9 @@ public sealed class AuthController(
             new("IsAccessNomenclature",            user.IsAccessNomenclature.ToString().ToLower()),
             new("IsAccessNomenclatureEdit",        user.IsAccessNomenclatureEdit.ToString().ToLower()),
             new("IsAccessFinancialJournal",        user.IsAccessFinancialJournal.ToString().ToLower()),
+            new("IsAccessFinancialJournalEdit",    user.IsAccessFinancialJournalEdit.ToString().ToLower()),
             new("IsAccessWarehouses",              user.IsAccessWarehouses.ToString().ToLower()),
+            new("IsAccessWarehousesEdit",          user.IsAccessWarehousesEdit.ToString().ToLower()),
         };
 
         if (user.CompanyId.HasValue)
@@ -340,7 +346,9 @@ public sealed class AuthController(
         isAccessNomenclature = user.IsAccessNomenclature,
         isAccessNomenclatureEdit = user.IsAccessNomenclatureEdit,
         isAccessFinancialJournal = user.IsAccessFinancialJournal,
+        isAccessFinancialJournalEdit = user.IsAccessFinancialJournalEdit,
         isAccessWarehouses = user.IsAccessWarehouses,
+        isAccessWarehousesEdit = user.IsAccessWarehousesEdit,
         availableProfiles = availableProfiles ?? Array.Empty<object>(),
     };
 

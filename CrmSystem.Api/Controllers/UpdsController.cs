@@ -39,7 +39,7 @@ public sealed class UpdsController(CrmDbContext db, CurrentUserService cu) : Con
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] UpdDto dto, CancellationToken ct)
     {
-        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (!cu.IsAccessFinancialJournalEdit) return Forbid();
         if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = new Upd
         {
@@ -94,7 +94,7 @@ public sealed class UpdsController(CrmDbContext db, CurrentUserService cu) : Con
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdDto dto, CancellationToken ct)
     {
-        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (!cu.IsAccessFinancialJournalEdit) return Forbid();
         var entity = await db.Upds
             .Include(x => x.Lines)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
@@ -149,7 +149,7 @@ public sealed class UpdsController(CrmDbContext db, CurrentUserService cu) : Con
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        if (!cu.IsAccessFinancialJournal) return Forbid();
+        if (!cu.IsAccessFinancialJournalEdit) return Forbid();
         var entity = await db.Upds.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
         entity.IsDeleted = true;

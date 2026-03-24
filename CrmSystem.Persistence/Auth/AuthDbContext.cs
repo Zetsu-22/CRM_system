@@ -174,8 +174,14 @@ public sealed class AuthUser : AuditableEntity
     /// <summary>Право просматривать финансовый журнал (счета, платежи, УПД).</summary>
     public bool IsAccessFinancialJournal { get; set; }
 
+    /// <summary>Право редактировать финансовый журнал (счета, платежи, УПД).</summary>
+    public bool IsAccessFinancialJournalEdit { get; set; }
+
     /// <summary>Право работать со складами и остатками.</summary>
     public bool IsAccessWarehouses { get; set; }
+
+    /// <summary>Право редактировать склады и остатки.</summary>
+    public bool IsAccessWarehousesEdit { get; set; }
 
     // ── Навигация ────────────────────────────────────────────────────────────
     public ICollection<AuthUserRole> UserRoles { get; set; } = new List<AuthUserRole>();
