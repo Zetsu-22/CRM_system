@@ -42,6 +42,10 @@ public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor)
     public bool IsAccessOrdersEdit       => HasFullAccess || GetBool("IsAccessOrdersEdit");
     public bool IsOrderPicker            => HasFullAccess || GetBool("IsOrderPicker");
     public bool IsExpeditor              => HasFullAccess || GetBool("IsExpeditor");
+    /// <summary>Driver — view-only for orders. Does not grant edit rights.</summary>
+    public bool IsDriver                 => GetBool("IsDriver");
+    /// <summary>Can view orders: full access, orders edit, picker, expeditor, or driver.</summary>
+    public bool CanViewOrders            => HasFullAccess || GetBool("IsAccessOrdersEdit") || GetBool("IsOrderPicker") || GetBool("IsExpeditor") || GetBool("IsDriver");
     public bool IsAccessContractors      => HasFullAccess || GetBool("IsAccessContractors");
     public bool IsAccessContractorsEdit  => HasFullAccess || GetBool("IsAccessContractorsEdit");
     public bool IsAccessContractorDiscountEdit => HasFullAccess || GetBool("IsAccessContractorDiscountEdit");

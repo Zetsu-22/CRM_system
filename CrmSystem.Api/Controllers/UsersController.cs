@@ -73,6 +73,7 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
             IsAccessOrdersEdit = dto.IsAccessOrdersEdit,
             IsOrderPicker = dto.IsOrderPicker,
             IsExpeditor = dto.IsExpeditor,
+            IsDriver = dto.IsDriver,
             IsAccessContractors = dto.IsAccessContractors,
             IsAccessContractorsEdit = dto.IsAccessContractorsEdit,
             IsAccessContractorDiscountEdit = dto.IsAccessContractorDiscountEdit,
@@ -107,6 +108,7 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
         user.IsAccessOrdersEdit = dto.IsAccessOrdersEdit;
         user.IsOrderPicker = dto.IsOrderPicker;
         user.IsExpeditor = dto.IsExpeditor;
+        user.IsDriver = dto.IsDriver;
         user.IsAccessContractors = dto.IsAccessContractors;
         user.IsAccessContractorsEdit = dto.IsAccessContractorsEdit;
         user.IsAccessContractorDiscountEdit = dto.IsAccessContractorDiscountEdit;
@@ -190,7 +192,7 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
     private static UserDto MapToDto(AuthUser u) => new(
         u.Id, u.Email, u.FullName, u.Phone, u.IsActive,
         u.CompanyId, u.IsCompanyOwner, u.IsBasicProfile,
-        u.IsAccessOrdersEdit, u.IsOrderPicker, u.IsExpeditor,
+        u.IsAccessOrdersEdit, u.IsOrderPicker, u.IsExpeditor, u.IsDriver,
         u.IsAccessContractors, u.IsAccessContractorsEdit, u.IsAccessContractorDiscountEdit,
         u.IsAccessNomenclature, u.IsAccessNomenclatureEdit,
         u.IsAccessFinancialJournal, u.IsAccessWarehouses);
@@ -200,7 +202,7 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
 public sealed record UserDto(
     Guid Id, string Email, string? FullName, string? Phone, bool IsActive,
     Guid? CompanyId, bool IsCompanyOwner, bool IsBasicProfile,
-    bool IsAccessOrdersEdit, bool IsOrderPicker, bool IsExpeditor,
+    bool IsAccessOrdersEdit, bool IsOrderPicker, bool IsExpeditor, bool IsDriver,
     bool IsAccessContractors, bool IsAccessContractorsEdit, bool IsAccessContractorDiscountEdit,
     bool IsAccessNomenclature, bool IsAccessNomenclatureEdit,
     bool IsAccessFinancialJournal, bool IsAccessWarehouses);
@@ -212,6 +214,7 @@ public sealed record CreateUserDto(
     bool IsAccessOrdersEdit = false,
     bool IsOrderPicker = false,
     bool IsExpeditor = false,
+    bool IsDriver = false,
     bool IsAccessContractors = false,
     bool IsAccessContractorsEdit = false,
     bool IsAccessContractorDiscountEdit = false,
@@ -225,6 +228,7 @@ public sealed record UpdatePermissionsDto(
     bool IsAccessOrdersEdit,
     bool IsOrderPicker,
     bool IsExpeditor,
+    bool IsDriver,
     bool IsAccessContractors,
     bool IsAccessContractorsEdit,
     bool IsAccessContractorDiscountEdit,

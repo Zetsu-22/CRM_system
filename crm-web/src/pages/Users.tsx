@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { UserCog, Shield, Truck, Package, Users } from 'lucide-react'
+import { Modal } from '../components/Modal'
+import { PageLayout } from '../components/PageLayout'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { toast } from '../components/Toast'
 import '../components/common.css'
-import '../components/Modal.css'
 
 interface UserDto {
   id: string
@@ -18,6 +20,7 @@ interface UserDto {
   isAccessOrdersEdit: boolean
   isOrderPicker: boolean
   isExpeditor: boolean
+  isDriver: boolean
   isAccessContractors: boolean
   isAccessContractorsEdit: boolean
   isAccessContractorDiscountEdit: boolean
@@ -27,30 +30,53 @@ interface UserDto {
   isAccessWarehouses: boolean
 }
 
-const PERM_LABELS: { key: keyof UserDto; label: string }[] = [
-  { key: 'isBasicProfile',                 label: 'Администратор' },
-  { key: 'isAccessOrdersEdit',             label: 'Заказы (ред.)' },
-  { key: 'isOrderPicker',                  label: 'Сборщик' },
-  { key: 'isExpeditor',                    label: 'Экспедитор' },
-  { key: 'isAccessContractors',            label: 'Контрагенты (просм.)' },
-  { key: 'isAccessContractorsEdit',        label: 'Контрагенты (ред.)' },
-  { key: 'isAccessContractorDiscountEdit', label: 'Скидки (ред.)' },
-  { key: 'isAccessNomenclature',           label: 'Номенклатура (просм.)' },
-  { key: 'isAccessNomenclatureEdit',       label: 'Номенклатура (ред.)' },
-  { key: 'isAccessFinancialJournal',       label: 'Финансы' },
-  { key: 'isAccessWarehouses',             label: 'Склады' },
+type PermKey = keyof Omit<UserDto, 'id' | 'email' | 'fullName' | 'phone' | 'isActive' | 'companyId' | 'isCompanyOwner'>
+
+const ROLE_SECTION: { key: PermKey; label: string; desc: string }[] = [
+  { key: 'isBasicProfile',   label: 'Администратор', desc: 'Управление пользователями компании' },
+  { key: 'isAccessOrdersEdit', label: 'Менеджер заказов', desc: 'Создавать, редактировать, менять статусы заказов' },
+  { key: 'isOrderPicker',    label: 'Сборщик',       desc: 'Просмотр заказов + закрытие чеклиста сборки' },
+  { key: 'isExpeditor',      label: 'Экспедитор',    desc: 'Работа с доставкой и статусами отгрузки' },
+  { key: 'isDriver',         label: 'Водитель',      desc: 'Только просмотр заказов (без редактирования)' },
 ]
 
-const muted: CSSProperties = { color: 'var(--text-muted)' }
+const MODULE_SECTION: { key: PermKey; label: string }[] = [
+  { key: 'isAccessContractors',            label: 'Контрагенты (просм.)' },
+  { key: 'isAccessContractorsEdit',        label: 'Контрагенты (ред.)' },
+  { key: 'isAccessContractorDiscountEdit', label: 'Скидки контрагентов (ред.)' },
+  { key: 'isAccessNomenclature',           label: 'Номенклатура (просм.)' },
+  { key: 'isAccessNomenclatureEdit',       label: 'Номенклатура (ред.)' },
+  { key: 'isAccessFinancialJournal',       label: 'Финансовый журнал (счета, УПД, платежи)' },
+  { key: 'isAccessWarehouses',             label: 'Склады и остатки' },
+]
+
+const ALL_PERM_KEYS: PermKey[] = [...ROLE_SECTION.map(r => r.key), ...MODULE_SECTION.map(m => m.key)]
+
+function getRoleBadge(u: UserDto) {
+  if (u.isCompanyOwner) return <span className="badge badge-blue">Владелец</span>
+  if (u.isBasicProfile) return <span className="badge badge-purple">Администратор</span>
+  if (u.isDriver)       return <span className="badge badge-gray"><Truck size={10} style={{ display:'inline', marginRight:3 }} />Водитель</span>
+  if (u.isOrderPicker)  return <span className="badge badge-teal"><Package size={10} style={{ display:'inline', marginRight:3 }} />Сборщик</span>
+  if (u.isExpeditor)    return <span className="badge badge-blue"><Truck size={10} style={{ display:'inline', marginRight:3 }} />Экспедитор</span>
+  if (u.isAccessOrdersEdit) return <span className="badge badge-teal">Менеджер</span>
+  return <span className="badge badge-gray">Сотрудник</span>
+}
+
+const emptyPerms = (): Record<PermKey, boolean> => ({
+  isBasicProfile: false, isAccessOrdersEdit: false, isOrderPicker: false,
+  isExpeditor: false, isDriver: false,
+  isAccessContractors: false, isAccessContractorsEdit: false, isAccessContractorDiscountEdit: false,
+  isAccessNomenclature: false, isAccessNomenclatureEdit: false,
+  isAccessFinancialJournal: false, isAccessWarehouses: false,
+})
 
 export function UsersPage() {
   const { canManageUsers } = useAuth()
   const navigate = useNavigate()
-  const [users, setUsers]       = useState<UserDto[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [errMsg, setErrMsg]     = useState<string | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
-  const [editPerms, setEditPerms]   = useState<UserDto | null>(null)
+  const [users, setUsers]     = useState<UserDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [modal, setModal]     = useState<'create' | 'edit' | 'resetPwd' | null>(null)
+  const [selected, setSelected] = useState<UserDto | null>(null)
 
   useEffect(() => {
     if (!canManageUsers) { navigate('/'); return }
@@ -60,42 +86,40 @@ export function UsersPage() {
 
   async function load() {
     setLoading(true)
-    try {
-      setUsers(await api.get<UserDto[]>('/users'))
-    } catch (e: unknown) { setErrMsg(e instanceof Error ? e.message : 'Ошибка') }
+    try { setUsers(await api.get<UserDto[]>('/users')) }
+    catch (e: unknown) { toast('error', e instanceof Error ? e.message : 'Ошибка загрузки') }
     finally { setLoading(false) }
   }
 
   async function toggleActive(u: UserDto) {
     try {
       await api.put(`/users/${u.id}/${u.isActive ? 'deactivate' : 'activate'}`, {})
+      toast('success', u.isActive ? 'Пользователь заблокирован' : 'Пользователь активирован')
       load()
-    } catch (e: unknown) { setErrMsg(e instanceof Error ? e.message : 'Ошибка') }
+    } catch (e: unknown) { toast('error', e instanceof Error ? e.message : 'Ошибка') }
   }
 
+  const openEdit = (u: UserDto) => { setSelected(u); setModal('edit') }
+  const openReset = (u: UserDto) => { setSelected(u); setModal('resetPwd') }
+  const closeModal = () => { setModal(null); setSelected(null) }
+
   return (
-    <div className="pageLayout">
-      <div className="pageHead">
-        <h1 className="pageH1">Пользователи</h1>
-        <div className="pageActions">
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Добавить</button>
-        </div>
-      </div>
-
-      {errMsg && <div style={{ color: '#ef4444', marginBottom: 12, fontSize: 14 }}>{errMsg}</div>}
-
-      {loading ? (
-        <p style={muted}>Загрузка...</p>
-      ) : (
-        <div className="tableWrap">
+    <PageLayout
+      title="Сотрудники"
+      actions={<button className="btn btn-primary" onClick={() => setModal('create')}><Users size={14} style={{ marginRight: 6 }} />Добавить сотрудника</button>}
+    >
+      <div className="tableWrap">
+        {loading ? <div className="tableLoading">Загрузка…</div> : users.length === 0 ? (
+          <div className="tableEmpty">Нет сотрудников</div>
+        ) : (
           <table className="crmTable">
             <thead>
               <tr>
-                <th>Пользователь</th>
+                <th>Сотрудник</th>
                 <th>Роль</th>
-                <th>Права</th>
+                <th>Права доступа</th>
                 <th>Статус</th>
-                <th>Действия</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -103,25 +127,21 @@ export function UsersPage() {
                 <tr key={u.id}>
                   <td>
                     <div style={{ fontWeight: 600 }}>{u.fullName ?? u.email}</div>
-                    {u.fullName && <div style={{ ...muted, fontSize: 12 }}>{u.email}</div>}
-                    {u.phone   && <div style={{ ...muted, fontSize: 12 }}>{u.phone}</div>}
+                    {u.fullName && <div style={{ fontSize: 12, opacity: .6 }}>{u.email}</div>}
+                    {u.phone    && <div style={{ fontSize: 12, opacity: .6 }}>{u.phone}</div>}
                   </td>
-                  <td>
-                    {u.isCompanyOwner
-                      ? <span className="badge badge-blue">Владелец</span>
-                      : u.isBasicProfile
-                        ? <span className="badge badge-purple">Администратор</span>
-                        : <span className="badge badge-gray">Сотрудник</span>}
-                  </td>
+                  <td>{getRoleBadge(u)}</td>
                   <td>
                     {u.isCompanyOwner ? (
-                      <span style={muted}>Все права</span>
+                      <span style={{ opacity: .5, fontSize: 13 }}>Все права</span>
                     ) : (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {PERM_LABELS.filter(p => u[p.key] === true).map(p => (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                        {MODULE_SECTION.filter(p => u[p.key]).map(p => (
                           <span key={p.key} className="badge badge-teal" style={{ fontSize: 11 }}>{p.label}</span>
                         ))}
-                        {PERM_LABELS.every(p => !u[p.key]) && <span style={muted}>Нет прав</span>}
+                        {!MODULE_SECTION.some(p => u[p.key]) && (
+                          <span style={{ opacity: .4, fontSize: 13 }}>—</span>
+                        )}
                       </div>
                     )}
                   </td>
@@ -130,187 +150,210 @@ export function UsersPage() {
                       {u.isActive ? 'Активен' : 'Заблокирован'}
                     </span>
                   </td>
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     {!u.isCompanyOwner && (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setEditPerms({ ...u })}>Права</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(u)}><UserCog size={13} /></button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openReset(u)}>Пароль</button>
                         <button
                           className={`btn btn-sm ${u.isActive ? 'btn-danger' : 'btn-secondary'}`}
                           onClick={() => toggleActive(u)}
-                        >
-                          {u.isActive ? 'Блок.' : 'Разблок.'}
-                        </button>
+                        >{u.isActive ? 'Блок.' : 'Разблок.'}</button>
                       </div>
                     )}
                   </td>
                 </tr>
               ))}
-              {users.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="tableEmpty">Нет пользователей</td>
-                </tr>
-              )}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
 
-      {showCreate && (
-        <CreateUserModal
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); load() }}
-        />
+      {modal === 'create' && (
+        <CreateUserModal onClose={closeModal} onCreated={() => { closeModal(); load() }} />
       )}
-      {editPerms && (
-        <EditPermsModal
-          user={editPerms}
-          onClose={() => setEditPerms(null)}
-          onSaved={() => { setEditPerms(null); load() }}
-        />
+      {modal === 'edit' && selected && (
+        <EditPermsModal user={selected} onClose={closeModal} onSaved={() => { closeModal(); load() }} />
       )}
-    </div>
+      {modal === 'resetPwd' && selected && (
+        <ResetPasswordModal user={selected} onClose={closeModal} />
+      )}
+    </PageLayout>
   )
 }
 
 // ── Create User Modal ─────────────────────────────────────────────────────────
 function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({
-    email: '', password: '', fullName: '', phone: '',
-    isBasicProfile: false,
-    isAccessOrdersEdit: false, isOrderPicker: false, isExpeditor: false,
-    isAccessContractors: false, isAccessContractorsEdit: false, isAccessContractorDiscountEdit: false,
-    isAccessNomenclature: false, isAccessNomenclatureEdit: false,
-    isAccessFinancialJournal: false, isAccessWarehouses: false,
-  })
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const [form, setForm] = useState({ email: '', password: '', fullName: '', phone: '', ...emptyPerms() })
+  const [saving, setSaving] = useState(false)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    setLoading(true); setErr(null)
+    setSaving(true)
     try {
       await api.post('/users', form)
+      toast('success', 'Сотрудник добавлен')
       onCreated()
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Ошибка') }
-    finally { setLoading(false) }
+    } catch (e: unknown) { toast('error', e instanceof Error ? e.message : 'Ошибка') }
+    finally { setSaving(false) }
   }
 
+  const toggle = (k: PermKey) => setForm(f => ({ ...f, [k]: !f[k] }))
+
   return (
-    <div className="modalOverlay" onClick={onClose}>
-      <div className="modalBox" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-        <div className="modalHeader">
-          <span className="modalTitle">Новый пользователь</span>
-          <button className="modalClose" onClick={onClose}>✕</button>
+    <Modal title="Новый сотрудник" subtitle="Доступ к CRM системе" onClose={onClose} size="lg">
+      <form onSubmit={submit}>
+        <div className="formGrid">
+          <div className="formGroup">
+            <label className="formLabel">Email *</label>
+            <input className="formInput" required type="email" value={form.email}
+              onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          </div>
+          <div className="formGroup">
+            <label className="formLabel">Пароль *</label>
+            <input className="formInput" required type="password" value={form.password}
+              onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
+          </div>
+          <div className="formGroup">
+            <label className="formLabel">Имя</label>
+            <input className="formInput" value={form.fullName}
+              onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
+          </div>
+          <div className="formGroup">
+            <label className="formLabel">Телефон</label>
+            <input className="formInput" value={form.phone}
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          </div>
         </div>
-        <div className="modalBody">
-          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="formGroup">
-              <label className="formLabel">Email *</label>
-              <input className="formInput" required type="email" value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-            </div>
-            <div className="formGroup">
-              <label className="formLabel">Пароль *</label>
-              <input className="formInput" required type="password" value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
-            </div>
-            <div className="formGrid">
-              <div className="formGroup">
-                <label className="formLabel">Имя</label>
-                <input className="formInput" value={form.fullName}
-                  onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
-              </div>
-              <div className="formGroup">
-                <label className="formLabel">Телефон</label>
-                <input className="formInput" value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
-            </div>
 
-            <div style={{ marginTop: 4 }}>
-              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Права доступа</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {PERM_LABELS.map(p => (
-                  <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={!!form[p.key as keyof typeof form]}
-                      onChange={() => setForm(f => ({ ...f, [p.key]: !f[p.key as keyof typeof f] }))} />
-                    {p.label}
-                  </label>
-                ))}
+        <div className="formSection">
+          <div className="formSectionTitle"><Shield size={14} />Роли сотрудника</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {ROLE_SECTION.map(r => (
+              <div key={r.key} className="formCheckboxRow" onClick={() => toggle(r.key)} style={{ cursor: 'pointer', borderRadius: 8, padding: '8px 10px', background: form[r.key] ? 'var(--primary-light, #eff6ff)' : 'var(--bg-page)' }}>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: 13 }}>{r.label}</div>
+                  <div style={{ fontSize: 11, opacity: .6, marginTop: 1 }}>{r.desc}</div>
+                </div>
+                <input type="checkbox" checked={!!form[r.key]} onChange={() => toggle(r.key)} onClick={e => e.stopPropagation()} />
               </div>
-            </div>
-
-            {err && <div style={{ color: '#ef4444', fontSize: 13 }}>{err}</div>}
-            <div className="formActions">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? 'Создание...' : 'Создать'}
-              </button>
-            </div>
-          </form>
+            ))}
+          </div>
         </div>
-      </div>
-    </div>
+
+        <div className="formSection">
+          <div className="formSectionTitle"><UserCog size={14} />Доступ к модулям</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {MODULE_SECTION.map(m => (
+              <div key={m.key} className="formCheckboxRow">
+                <label style={{ fontSize: 13 }}>{m.label}</label>
+                <input type="checkbox" checked={!!form[m.key]} onChange={() => toggle(m.key)} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="formActions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Создание…' : 'Создать'}</button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
 // ── Edit Permissions Modal ────────────────────────────────────────────────────
 function EditPermsModal({ user, onClose, onSaved }: { user: UserDto; onClose: () => void; onSaved: () => void }) {
-  const [perms, setPerms] = useState({
-    isBasicProfile: user.isBasicProfile,
-    isAccessOrdersEdit: user.isAccessOrdersEdit,
-    isOrderPicker: user.isOrderPicker,
-    isExpeditor: user.isExpeditor,
-    isAccessContractors: user.isAccessContractors,
-    isAccessContractorsEdit: user.isAccessContractorsEdit,
-    isAccessContractorDiscountEdit: user.isAccessContractorDiscountEdit,
-    isAccessNomenclature: user.isAccessNomenclature,
-    isAccessNomenclatureEdit: user.isAccessNomenclatureEdit,
-    isAccessFinancialJournal: user.isAccessFinancialJournal,
-    isAccessWarehouses: user.isAccessWarehouses,
-  })
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const initPerms = () => {
+    const p: Record<PermKey, boolean> = emptyPerms()
+    ALL_PERM_KEYS.forEach(k => { p[k] = !!user[k] })
+    return p
+  }
+  const [perms, setPerms] = useState<Record<PermKey, boolean>>(initPerms)
+  const [saving, setSaving] = useState(false)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    setLoading(true); setErr(null)
+    setSaving(true)
     try {
       await api.put(`/users/${user.id}/permissions`, perms)
+      toast('success', 'Права обновлены')
       onSaved()
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Ошибка') }
-    finally { setLoading(false) }
+    } catch (e: unknown) { toast('error', e instanceof Error ? e.message : 'Ошибка') }
+    finally { setSaving(false) }
+  }
+
+  const toggle = (k: PermKey) => setPerms(v => ({ ...v, [k]: !v[k] }))
+
+  return (
+    <Modal title={user.fullName ?? user.email} subtitle="Настройка прав доступа" onClose={onClose} size="lg">
+      <form onSubmit={submit}>
+        <div className="formSection">
+          <div className="formSectionTitle"><Shield size={14} />Роли</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {ROLE_SECTION.map(r => (
+              <div key={r.key} className="formCheckboxRow" onClick={() => toggle(r.key)} style={{ cursor: 'pointer', borderRadius: 8, padding: '8px 10px', background: perms[r.key] ? 'var(--primary-light, #eff6ff)' : 'var(--bg-page)' }}>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: 13 }}>{r.label}</div>
+                  <div style={{ fontSize: 11, opacity: .6, marginTop: 1 }}>{r.desc}</div>
+                </div>
+                <input type="checkbox" checked={perms[r.key]} onChange={() => toggle(r.key)} onClick={e => e.stopPropagation()} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="formSection">
+          <div className="formSectionTitle"><UserCog size={14} />Доступ к модулям</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {MODULE_SECTION.map(m => (
+              <div key={m.key} className="formCheckboxRow">
+                <label style={{ fontSize: 13 }}>{m.label}</label>
+                <input type="checkbox" checked={perms[m.key]} onChange={() => toggle(m.key)} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="formActions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// ── Reset Password Modal ──────────────────────────────────────────────────────
+function ResetPasswordModal({ user, onClose }: { user: UserDto; onClose: () => void }) {
+  const [pwd, setPwd] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (pwd.length < 6) { toast('error', 'Пароль минимум 6 символов'); return }
+    setSaving(true)
+    try {
+      await api.put(`/users/${user.id}/reset-password`, { newPassword: pwd })
+      toast('success', 'Пароль изменён')
+      onClose()
+    } catch (e: unknown) { toast('error', e instanceof Error ? e.message : 'Ошибка') }
+    finally { setSaving(false) }
   }
 
   return (
-    <div className="modalOverlay" onClick={onClose}>
-      <div className="modalBox" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-        <div className="modalHeader">
-          <span className="modalTitle">Права: {user.fullName ?? user.email}</span>
-          <button className="modalClose" onClick={onClose}>✕</button>
+    <Modal title="Сброс пароля" subtitle={user.fullName ?? user.email} onClose={onClose} size="sm">
+      <form onSubmit={submit}>
+        <div className="formGroup">
+          <label className="formLabel">Новый пароль</label>
+          <input className="formInput" type="password" value={pwd} required minLength={6}
+            onChange={e => setPwd(e.target.value)} autoFocus />
         </div>
-        <div className="modalBody">
-          <form onSubmit={submit}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              {PERM_LABELS.map(p => (
-                <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, cursor: 'pointer' }}>
-                  <input type="checkbox"
-                    checked={!!perms[p.key as keyof typeof perms]}
-                    onChange={() => setPerms(v => ({ ...v, [p.key]: !v[p.key as keyof typeof v] }))} />
-                  {p.label}
-                </label>
-              ))}
-            </div>
-            {err && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{err}</div>}
-            <div className="formActions">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
-              <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? 'Сохранение...' : 'Сохранить'}
-              </button>
-            </div>
-          </form>
+        <div className="formActions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Сохранение…' : 'Изменить'}</button>
         </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   )
 }

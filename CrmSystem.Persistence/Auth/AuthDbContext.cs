@@ -150,8 +150,11 @@ public sealed class AuthUser : AuditableEntity
     /// <summary>Роль «сборщик» (picker) — назначается на сборку заказа.</summary>
     public bool IsOrderPicker { get; set; }
 
-    /// <summary>Роль «экспедитор/водитель» — назначается на доставку.</summary>
+    /// <summary>Роль «экспедитор» — назначается на доставку, может редактировать статусы заказов.</summary>
     public bool IsExpeditor { get; set; }
+
+    /// <summary>Роль «водитель» — только просмотр заказов.</summary>
+    public bool IsDriver { get; set; }
 
     /// <summary>Право просматривать контрагентов.</summary>
     public bool IsAccessContractors { get; set; }

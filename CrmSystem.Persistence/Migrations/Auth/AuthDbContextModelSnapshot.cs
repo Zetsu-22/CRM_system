@@ -211,6 +211,9 @@ namespace CrmSystem.Persistence.Migrations.Auth
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsDriver")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsExpeditor")
                         .HasColumnType("boolean");
 

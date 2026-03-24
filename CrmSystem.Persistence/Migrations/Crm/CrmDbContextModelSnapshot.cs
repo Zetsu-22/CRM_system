@@ -632,11 +632,8 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<uint>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
+                    b.Property<long>("RowVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -708,11 +705,8 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<decimal>("Qty")
                         .HasColumnType("numeric");
 
-                    b.Property<uint>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
+                    b.Property<long>("RowVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("numeric");

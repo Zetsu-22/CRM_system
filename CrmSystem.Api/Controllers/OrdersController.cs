@@ -25,6 +25,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
+        if (!cu.CanViewOrders) return Forbid();
         if (cu.CompanyId is null) return Ok(Array.Empty<object>());
         var list = await db.Orders
             .Where(x => x.CompanyId == cu.CompanyId)
@@ -39,6 +40,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        if (!cu.CanViewOrders) return Forbid();
         if (cu.CompanyId is null) return NotFound();
         var item = await db.Orders
             .Include(x => x.Company)

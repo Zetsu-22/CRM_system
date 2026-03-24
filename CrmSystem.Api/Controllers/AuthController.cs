@@ -95,6 +95,7 @@ public sealed class AuthController(
         user.IsAccessOrdersEdit = true;
         user.IsOrderPicker = true;
         user.IsExpeditor = true;
+        user.IsDriver = true;
         user.IsAccessContractors = true;
         user.IsAccessContractorsEdit = true;
         user.IsAccessContractorDiscountEdit = true;
@@ -219,6 +220,7 @@ public sealed class AuthController(
             IsAccessOrdersEdit = user.IsAccessOrdersEdit,
             IsOrderPicker = user.IsOrderPicker,
             IsExpeditor = user.IsExpeditor,
+            IsDriver = user.IsDriver,
             IsAccessContractors = user.IsAccessContractors,
             IsAccessContractorsEdit = user.IsAccessContractorsEdit,
             IsAccessContractorDiscountEdit = user.IsAccessContractorDiscountEdit,
@@ -295,6 +297,7 @@ public sealed class AuthController(
             new("IsAccessOrdersEdit",              user.IsAccessOrdersEdit.ToString().ToLower()),
             new("IsOrderPicker",                   user.IsOrderPicker.ToString().ToLower()),
             new("IsExpeditor",                     user.IsExpeditor.ToString().ToLower()),
+            new("IsDriver",                         user.IsDriver.ToString().ToLower()),
             new("IsAccessContractors",             user.IsAccessContractors.ToString().ToLower()),
             new("IsAccessContractorsEdit",         user.IsAccessContractorsEdit.ToString().ToLower()),
             new("IsAccessContractorDiscountEdit",  user.IsAccessContractorDiscountEdit.ToString().ToLower()),
@@ -330,6 +333,7 @@ public sealed class AuthController(
         isAccessOrdersEdit = user.IsAccessOrdersEdit,
         isOrderPicker = user.IsOrderPicker,
         isExpeditor = user.IsExpeditor,
+        isDriver = user.IsDriver,
         isAccessContractors = user.IsAccessContractors,
         isAccessContractorsEdit = user.IsAccessContractorsEdit,
         isAccessContractorDiscountEdit = user.IsAccessContractorDiscountEdit,

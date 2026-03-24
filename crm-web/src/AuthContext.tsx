@@ -21,6 +21,7 @@ export interface UserProfile {
   isAccessOrdersEdit: boolean
   isOrderPicker: boolean
   isExpeditor: boolean
+  isDriver: boolean
   isAccessContractors: boolean
   isAccessContractorsEdit: boolean
   isAccessContractorDiscountEdit: boolean
