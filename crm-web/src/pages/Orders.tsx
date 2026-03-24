@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Trash2, ShoppingCart } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
+import { OrderDetailPanel } from '../components/OrderDetailPanel'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
@@ -36,6 +37,7 @@ interface Order {
   totalVat: number
   totalGross: number
   comment: string | null
+  isAssemblyChecklistClosed: boolean
   lines: OrderLine[]
 }
 
@@ -95,6 +97,9 @@ export function OrdersPage() {
   const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
   const canViewOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isOrderPicker || profile?.isExpeditor || profile?.isDriver)
   const canEditOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit)
+
+  const canClosePickingForOrder = (order: Order) =>
+    canEditOrders || (!!(profile?.isOrderPicker) && order.status === 'Picking')
 
   const load = () => {
     setLoading(true)
@@ -209,6 +214,15 @@ export function OrdersPage() {
     finally { setSaving(false) }
   }
 
+  const handleChecklistClosed = (orderId: string) => {
+    setOrders(prev => prev.map(o =>
+      o.id === orderId ? { ...o, isAssemblyChecklistClosed: true } : o
+    ))
+    if (selected?.id === orderId) {
+      setSelected(prev => prev ? { ...prev, isAssemblyChecklistClosed: true } : prev)
+    }
+  }
+
   return (
     <PageLayout title="Заказы" actions={
       canEditOrders ? <button className="btn btn-primary" onClick={openCreate}>+ Создать заказ</button> : null
@@ -315,43 +329,16 @@ export function OrdersPage() {
       )}
 
       {modal === 'view' && selected && (
-        <Modal title={`Заказ ${selected.number ?? '—'}`} subtitle={`${STATUS_LABELS[selected.status]} • ${selected.counterparty?.name ?? ''}`} onClose={closeModal} size="lg">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 16, fontSize: 14 }}>
-            <div><span style={{ opacity: .6 }}>Дата:</span> {selected.date.slice(0, 10)}</div>
-            <div><span style={{ opacity: .6 }}>Статус:</span> <span className={`badge ${STATUS_BADGE[selected.status]}`}>{STATUS_LABELS[selected.status]}</span></div>
-            <div><span style={{ opacity: .6 }}>Организация:</span> {selected.company?.name}</div>
-            <div><span style={{ opacity: .6 }}>Контрагент:</span> {selected.counterparty?.name}</div>
-            {selected.comment && <div style={{ gridColumn: '1/-1' }}><span style={{ opacity: .6 }}>Комментарий:</span> {selected.comment}</div>}
-          </div>
-          <div className="tableWrap">
-            <table className="crmTable">
-              <thead><tr><th>Наименование</th><th>Кол-во</th><th>Цена</th><th>НДС</th><th>Сумма</th></tr></thead>
-              <tbody>
-                {selected.lines.map(l => (
-                  <tr key={l.id}>
-                    <td>{l.nameSnapshot}</td>
-                    <td>{l.qty}</td>
-                    <td>{fmt(l.unitPrice)}</td>
-                    <td>{fmt(l.vat)}</td>
-                    <td>{fmt(l.gross)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ textAlign: 'right', marginTop: 12, display: 'flex', gap: 20, justifyContent: 'flex-end', fontSize: 14 }}>
-            <span style={{ opacity: .7 }}>Без НДС: {fmt(selected.totalNet)}</span>
-            <span style={{ opacity: .7 }}>НДС: {fmt(selected.totalVat)}</span>
-            <strong>Итого: {fmt(selected.totalGross)}</strong>
-          </div>
-          <div className="formActions">
-            {canEditOrders && !LOCKED_STATUSES.includes(selected.status) && <button className="btn btn-secondary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}>Редактировать</button>}
-            {canEditOrders && selected.status === 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'confirm'); closeModal() }}>Подтвердить</button>}
-            {canEditOrders && !FINAL_STATUSES.includes(selected.status) && selected.status !== 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'next-status'); closeModal() }}>Следующий статус ›</button>}
-            {canEditOrders && !FINAL_STATUSES.includes(selected.status) && <button className="btn btn-danger" onClick={() => { transition(selected!.id, 'cancel'); closeModal() }}>Отменить</button>}
-            <button className="btn btn-secondary" onClick={closeModal}>Закрыть</button>
-          </div>
-        </Modal>
+        <OrderDetailPanel
+          order={selected}
+          canEditOrders={canEditOrders}
+          canClosePicking={canClosePickingForOrder(selected)}
+          onClose={closeModal}
+          onEdit={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}
+          onDelete={() => { closeModal(); setTimeout(() => openDelete(selected!), 50) }}
+          onTransition={action => { transition(selected!.id, action); closeModal() }}
+          onChecklistClosed={handleChecklistClosed}
+        />
       )}
 
       {modal === 'delete' && selected && (

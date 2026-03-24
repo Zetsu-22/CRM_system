@@ -155,6 +155,8 @@ public sealed class SalesOrder : AuditableEntity
     public decimal TotalVat { get; set; }
     public decimal TotalGross { get; set; }
 
+    public bool IsAssemblyChecklistClosed { get; set; }
+
     public string? Comment { get; set; }
 
     public ICollection<SalesOrderLine> Lines { get; set; } = new List<SalesOrderLine>();

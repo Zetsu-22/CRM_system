@@ -16,6 +16,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         o.Id, o.Number, o.Date, o.CompanyId, o.Company?.Name,
         o.CounterpartyId, o.Counterparty?.Name,
         o.Status, o.Comment, o.TotalNet, o.TotalVat, o.TotalGross,
+        o.IsAssemblyChecklistClosed,
         o.CreatedAt, o.UpdatedAt,
         o.Lines.Select(l => new OrderLineResponse(
             l.Id, l.ItemId, l.Item?.Name, l.NameSnapshot, l.VatRateSnapshot,
@@ -273,6 +274,28 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         return next;
     }
 
+    // POST /orders/{id}/assembly-checklist/close
+    // Закрывает чеклист сборки. Сборщик может закрывать только в статусе Picking.
+    [HttpPost("{id:guid}/assembly-checklist/close")]
+    public async Task<IActionResult> CloseAssemblyChecklist(Guid id, CancellationToken ct)
+    {
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
+
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
+        if (entity is null) return NotFound();
+
+        var canClose = cu.IsAccessOrdersEdit || (cu.IsOrderPicker && entity.Status == OrderStatus.Picking);
+        if (!canClose) return Forbid();
+
+        if (entity.IsAssemblyChecklistClosed)
+            return Ok(new { id = entity.Id, isAssemblyChecklistClosed = true });
+
+        entity.IsAssemblyChecklistClosed = true;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Ok(new { id = entity.Id, isAssemblyChecklistClosed = true });
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
@@ -316,5 +339,6 @@ public sealed record OrderResponse(
     Guid CounterpartyId, string? CounterpartyName,
     OrderStatus Status, string? Comment,
     decimal TotalNet, decimal TotalVat, decimal TotalGross,
+    bool IsAssemblyChecklistClosed,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     List<OrderLineResponse> Lines);

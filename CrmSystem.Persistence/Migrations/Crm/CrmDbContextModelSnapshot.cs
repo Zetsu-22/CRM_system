@@ -625,6 +625,9 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
+                    b.Property<bool>("IsAssemblyChecklistClosed")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
