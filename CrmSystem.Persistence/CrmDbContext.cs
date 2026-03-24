@@ -182,7 +182,6 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasKey(x => x.Id);
             b.Property(x => x.Number).HasMaxLength(32);
             b.HasIndex(x => x.Number);
-            ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
 
             b.HasOne(x => x.Company)
@@ -199,7 +198,6 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.ToTable("order_lines");
             b.HasKey(x => x.Id);
             b.Property(x => x.NameSnapshot).HasMaxLength(256);
-            ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
 
             b.HasOne(x => x.Order)

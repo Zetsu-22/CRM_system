@@ -10,7 +10,7 @@ namespace CrmSystem.Api.Controllers;
 [ApiController]
 [Route("api/v1/dev")]
 [Authorize]
-public sealed class DevSeedController(CrmDbContext db, CurrentUserService cu, IWebHostEnvironment env) : ControllerBase
+public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) : ControllerBase
 {
     [HttpPost("seed-test-company")]
     public async Task<IActionResult> SeedTestCompany([FromBody] SeedTestCompanyDto dto, CancellationToken ct)

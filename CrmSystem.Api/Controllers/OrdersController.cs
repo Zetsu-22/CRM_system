@@ -106,6 +106,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
     public async Task<IActionResult> Update(Guid id, [FromBody] SalesOrderDto dto, CancellationToken ct)
     {
         if (!cu.IsAccessOrdersEdit) return Forbid();
+        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = await db.Orders
             .Include(x => x.Lines)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
@@ -123,15 +124,17 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         foreach (var l in entity.Lines)
         {
             l.IsDeleted = true;
+            l.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
-        entity.Lines.Clear();
+        var now = DateTimeOffset.UtcNow;
+        var newLines = new List<SalesOrderLine>(dto.Lines.Count);
         foreach (var line in dto.Lines)
         {
             var net = line.Qty * line.UnitPrice;
             var vatRate = (int)line.VatRateSnapshot / 100m;
             var vat = net * vatRate;
-            entity.Lines.Add(new SalesOrderLine
+            var newLine = new SalesOrderLine
             {
                 Id = Guid.NewGuid(),
                 ItemId = line.ItemId,
@@ -145,20 +148,34 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
                 Vat = vat,
                 Gross = net + vat,
                 WarehouseId = line.WarehouseId,
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            newLines.Add(newLine);
+            entity.Lines.Add(newLine);
         }
 
-        entity.TotalNet = entity.Lines.Sum(l => l.Net);
-        entity.TotalVat = entity.Lines.Sum(l => l.Vat);
-        entity.TotalGross = entity.Lines.Sum(l => l.Gross);
+        entity.TotalNet = newLines.Sum(l => l.Net);
+        entity.TotalVat = newLines.Sum(l => l.Vat);
+        entity.TotalGross = newLines.Sum(l => l.Gross);
 
-        await db.SaveChangesAsync(ct);
-        await db.Entry(entity).Reference(x => x.Company).LoadAsync(ct);
-        await db.Entry(entity).Reference(x => x.Counterparty).LoadAsync(ct);
-        foreach (var l in entity.Lines) await db.Entry(l).Reference(x => x.Item).LoadAsync(ct);
-        return Ok(ToResponse(entity));
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { error = new { code = "concurrency_conflict", message = "Заказ был изменён или удалён. Обновите страницу и повторите попытку." } });
+        }
+
+        var updated = await db.Orders
+            .Where(x => x.Id == id && x.CompanyId == cu.CompanyId)
+            .Include(x => x.Company)
+            .Include(x => x.Counterparty)
+            .Include(x => x.Lines).ThenInclude(l => l.Item)
+            .FirstOrDefaultAsync(ct);
+
+        return updated is null ? NotFound() : Ok(ToResponse(updated));
     }
 
     // Статусы, после которых заказ нельзя редактировать (уже в доставке)
