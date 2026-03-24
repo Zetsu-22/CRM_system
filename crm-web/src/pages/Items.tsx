@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -112,7 +113,7 @@ export function ItemsPage() {
       </div>
 
       {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'Новая позиция' : 'Редактировать позицию'} onClose={closeModal} width={580}>
+        <Modal title={modal === 'create' ? 'Новая номенклатура' : 'Редактировать номенклатуру'} subtitle="Товар или услуга" onClose={closeModal} size="md">
           <div className="formGrid">
             <div className="formGroup"><label className="formLabel">Тип</label>
               <select className="formSelect" value={form.type} onChange={f('type')}>
@@ -135,9 +136,11 @@ export function ItemsPage() {
               </select></div>
             <div className="formGroup"><label className="formLabel">Штрихкод</label>
               <input className="formInput" value={form.barcode} onChange={f('barcode')} /></div>
-            <div className="formGroup" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 20 }}>
-              <input type="checkbox" id="isStockItem" checked={form.isStockItem} onChange={f('isStockItem')} />
-              <label htmlFor="isStockItem" className="formLabel" style={{ textTransform: 'none', cursor: 'pointer' }}>Складской учёт</label>
+            <div className="formGroup full">
+              <div className="formCheckboxRow">
+                <label htmlFor="isStockItem">Складской учёт</label>
+                <input type="checkbox" id="isStockItem" checked={form.isStockItem} onChange={f('isStockItem')} />
+              </div>
             </div>
           </div>
           <div className="formActions">
@@ -148,8 +151,9 @@ export function ItemsPage() {
       )}
 
       {modal === 'delete' && selected && (
-        <Modal title="Удалить позицию?" onClose={closeModal} width={400}>
+        <Modal title="Удалить номенклатуру" subtitle="Это действие нельзя отменить" onClose={closeModal} size="sm">
           <div className="confirmBox">
+            <div className="confirmBoxIcon"><Trash2 size={22} /></div>
             <p>Удалить <strong>{selected.name}</strong>?</p>
             <div className="confirmActions">
               <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>

@@ -152,34 +152,70 @@
 .btn-lg { padding: 10px 20px; font-size: 15px; }
 
 /* ── Form fields ── */
+
+/* Section separator with title (like fimbiz "border-t + h4 text-sm font-bold text-primary") */
+.formSection {
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid hsl(var(--border));
+}
+.formSection:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+
+/* Section header inside modal body — small icon + bold primary text */
+.formSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: hsl(var(--primary));
+  margin-bottom: 14px;
+}
+
+/* Small group label above a cluster of fields (UPPERCASE muted) */
+.formGroupTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground));
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+}
+
 .formGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 20px;
 }
 .formGrid.cols1 { grid-template-columns: 1fr; }
+.formGrid.cols3 { grid-template-columns: 1fr 1fr 1fr; }
 
 .formGroup {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 .formGroup.full { grid-column: 1 / -1; }
 
 .formLabel {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   color: hsl(var(--foreground));
-  letter-spacing: 0.1px;
 }
+.formLabel .required { color: hsl(var(--destructive)); margin-left: 2px; }
 
 .formInput,
 .formSelect,
 .formTextarea {
-  background: hsl(var(--card));
+  background: hsl(var(--background));
   border: 1px solid hsl(var(--input));
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 0 12px;
+  height: 36px;
   font-size: 13.5px;
   color: hsl(var(--foreground));
   font-family: inherit;
@@ -188,6 +224,13 @@
   transition: border-color 0.15s, box-shadow 0.15s;
   outline: none;
 }
+.formTextarea {
+  height: auto;
+  padding: 8px 12px;
+  resize: vertical;
+  min-height: 76px;
+}
+
 .formInput::placeholder,
 .formTextarea::placeholder { color: hsl(var(--muted-foreground)); }
 
@@ -195,14 +238,40 @@
 .formSelect:focus,
 .formTextarea:focus {
   border-color: hsl(var(--primary));
-  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12);
+}
+
+.formInput:read-only,
+.formSelect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .formSelect option { background: hsl(var(--card)); }
 
-.formTextarea {
-  resize: vertical;
-  min-height: 72px;
+/* Inline checkbox row (like fimbiz "flex items-center justify-between") */
+.formCheckboxRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.25);
+  gap: 10px;
+}
+.formCheckboxRow label {
+  font-size: 13.5px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  user-select: none;
+}
+.formCheckboxRow input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: hsl(var(--primary));
+  flex-shrink: 0;
 }
 
 /* ── Status badges ── */
@@ -225,31 +294,58 @@
 .badge-teal   { background: hsl(173 80% 40% / 0.1); border-color: hsl(173 80% 40% / 0.3);  color: hsl(173 80% 28%); }
 .badge-purple { background: hsl(270 70% 55% / 0.1); border-color: hsl(270 70% 55% / 0.3);  color: hsl(270 70% 40%); }
 
-/* ── Form actions ── */
+/* ── Form actions — sticky footer (like fimbiz "border-t p-4 flex justify-end gap-2") ── */
 .formActions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: 0;
+  padding: 14px 0 0;
   border-top: 1px solid hsl(var(--border));
+  margin-top: 20px;
 }
 
-/* ── Confirm dialog ── */
+/* ── Confirm/Delete dialog ── */
 .confirmBox {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   padding: 8px 0 4px;
+  text-align: center;
 }
+
+.confirmBoxIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .confirmBox p {
-  margin: 0 0 20px;
+  margin: 0;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: hsl(var(--foreground));
+  max-width: 360px;
 }
+
+.confirmBox .confirmNote {
+  font-size: 12.5px;
+  color: hsl(var(--muted-foreground));
+}
+
 .confirmActions {
   display: flex;
   justify-content: center;
   gap: 10px;
+  padding-top: 4px;
 }
 
 /* ── Stat cards (dashboard) ── */

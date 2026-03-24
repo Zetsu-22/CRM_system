@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -113,7 +114,7 @@ export function CounterpartiesPage() {
       </div>
 
       {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'Новый контрагент' : 'Редактировать контрагента'} onClose={closeModal} width={580}>
+        <Modal title={modal === 'create' ? 'Новый контрагент' : 'Редактировать контрагента'} subtitle="Реквизиты и условия" onClose={closeModal} size="md">
           <div className="formGrid">
             <div className="formGroup full"><label className="formLabel">Название *</label>
               <input className="formInput" value={form.name} onChange={f('name')} /></div>
@@ -147,8 +148,9 @@ export function CounterpartiesPage() {
       )}
 
       {modal === 'delete' && selected && (
-        <Modal title="Удалить контрагента?" onClose={closeModal} width={400}>
+        <Modal title="Удалить контрагента" subtitle="Это действие нельзя отменить" onClose={closeModal} size="sm">
           <div className="confirmBox">
+            <div className="confirmBoxIcon"><Trash2 size={22} /></div>
             <p>Удалить <strong>{selected.name}</strong>?</p>
             <div className="confirmActions">
               <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>

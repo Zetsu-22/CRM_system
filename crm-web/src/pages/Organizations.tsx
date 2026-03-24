@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -123,8 +124,9 @@ export function OrganizationsPage() {
       {(modal === 'create' || modal === 'edit') && (
         <Modal
           title={modal === 'edit' ? 'Редактировать организацию' : 'Новая организация'}
+          subtitle="Юридическое лицо или подразделение"
           onClose={() => setModal(null)}
-          width={480}
+          size="sm"
         >
           <form onSubmit={handleSave}>
             <div className="formGrid cols1">
@@ -146,14 +148,16 @@ export function OrganizationsPage() {
                   onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                 />
               </div>
-              <div className="formGroup" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="checkbox"
-                  id="isDefault"
-                  checked={form.isDefault}
-                  onChange={e => setForm(f => ({ ...f, isDefault: e.target.checked }))}
-                />
-                <label htmlFor="isDefault" style={{ cursor: 'pointer', fontSize: 14 }}>По умолчанию</label>
+              <div className="formGroup">
+                <div className="formCheckboxRow">
+                  <label htmlFor="isDefault">По умолчанию</label>
+                  <input
+                    type="checkbox"
+                    id="isDefault"
+                    checked={form.isDefault}
+                    onChange={e => setForm(f => ({ ...f, isDefault: e.target.checked }))}
+                  />
+                </div>
               </div>
             </div>
             <div className="formActions">
@@ -167,8 +171,9 @@ export function OrganizationsPage() {
       )}
 
       {modal === 'delete' && selected && (
-        <Modal title="Удалить организацию" onClose={() => setModal(null)} width={400}>
+        <Modal title="Удалить организацию" subtitle="Это действие нельзя отменить" onClose={() => setModal(null)} size="sm">
           <div className="confirmBox">
+            <div className="confirmBoxIcon"><Trash2 size={22} /></div>
             <p>Удалить организацию <strong>{selected.name}</strong>?</p>
             <div className="confirmActions">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Отмена</button>

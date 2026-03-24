@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2, ShoppingCart } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -235,7 +236,7 @@ export function OrdersPage() {
       </div>
 
       {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'Новый заказ' : 'Редактировать заказ'} onClose={closeModal} width={860}>
+        <Modal title={modal === 'create' ? 'Новый заказ' : 'Редактировать заказ'} subtitle="Продажа товаров или услуг" onClose={closeModal} size="xl">
           <div className="formGrid">
             <div className="formGroup"><label className="formLabel">Номер</label>
               <input className="formInput" value={form.number} onChange={e => setForm(p => ({ ...p, number: e.target.value }))} placeholder="Авто" /></div>
@@ -255,9 +256,9 @@ export function OrdersPage() {
               <input className="formInput" value={form.comment} onChange={e => setForm(p => ({ ...p, comment: e.target.value }))} /></div>
           </div>
 
-          <div style={{ marginTop: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontWeight: 600 }}>Строки заказа</span>
+          <div className="formSection">
+            <div className="formSectionTitle" style={{ justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><ShoppingCart size={14} />Строки заказа</span>
               <button className="btn btn-secondary btn-sm" onClick={addLine}>+ Строка</button>
             </div>
             <div className="tableWrap">
@@ -296,7 +297,7 @@ export function OrdersPage() {
       )}
 
       {modal === 'view' && selected && (
-        <Modal title={`Заказ ${selected.number ?? '—'}`} onClose={closeModal} width={700}>
+        <Modal title={`Заказ ${selected.number ?? '—'}`} subtitle={`${STATUS_LABELS[selected.status]} • ${selected.counterparty?.name ?? ''}`} onClose={closeModal} size="lg">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 16, fontSize: 14 }}>
             <div><span style={{ opacity: .6 }}>Дата:</span> {selected.date.slice(0, 10)}</div>
             <div><span style={{ opacity: .6 }}>Статус:</span> <span className={`badge ${STATUS_BADGE[selected.status]}`}>{STATUS_LABELS[selected.status]}</span></div>
@@ -336,8 +337,9 @@ export function OrdersPage() {
       )}
 
       {modal === 'delete' && selected && (
-        <Modal title="Удалить заказ?" onClose={closeModal} width={400}>
+        <Modal title="Удалить заказ" subtitle="Это действие нельзя отменить" onClose={closeModal} size="sm">
           <div className="confirmBox">
+            <div className="confirmBoxIcon"><Trash2 size={22} /></div>
             <p>Удалить заказ <strong>{selected.number ?? selected.id.slice(0, 8)}</strong>?</p>
             <div className="confirmActions">
               <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>

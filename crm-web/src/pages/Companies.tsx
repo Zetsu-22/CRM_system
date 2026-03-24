@@ -146,7 +146,7 @@ export function CompaniesPage() {
       </div>
 
       {modal === 'edit' && (
-        <Modal title="Редактировать компанию" onClose={closeModal} width={640}>
+        <Modal title="Редактировать компанию" subtitle="Реквизиты и банковские данные" onClose={closeModal} size="lg">
           <div className="formGrid">
             <div className="formGroup full"><label className="formLabel">Название *</label>
               <input className="formInput" value={form.name} onChange={f('name')} /></div>
@@ -168,9 +168,11 @@ export function CompaniesPage() {
               <input className="formInput" value={form.legalAddress ?? ''} onChange={f('legalAddress')} /></div>
             <div className="formGroup full"><label className="formLabel">Фактический адрес</label>
               <input className="formInput" value={form.actualAddress ?? ''} onChange={f('actualAddress')} /></div>
-            <div className="formGroup full" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <input type="checkbox" id="vatPayer" checked={form.vatPayer} onChange={f('vatPayer')} />
-              <label htmlFor="vatPayer" className="formLabel" style={{ textTransform: 'none', cursor: 'pointer' }}>Плательщик НДС</label>
+            <div className="formGroup full">
+              <div className="formCheckboxRow">
+                <label htmlFor="vatPayer">Плательщик НДС</label>
+                <input type="checkbox" id="vatPayer" checked={form.vatPayer} onChange={f('vatPayer')} />
+              </div>
             </div>
           </div>
           <div className="formActions">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -99,15 +100,17 @@ export function WarehousesPage() {
       </div>
 
       {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'Новый склад' : 'Редактировать склад'} onClose={closeModal}>
+        <Modal title={modal === 'create' ? 'Новый склад' : 'Редактировать склад'} subtitle="Место хранения товаров" onClose={closeModal} size="sm">
           <div className="formGrid cols1">
             <div className="formGroup"><label className="formLabel">Название *</label>
               <input className="formInput" value={form.name} onChange={f('name')} /></div>
             <div className="formGroup"><label className="formLabel">Адрес</label>
               <input className="formInput" value={form.address} onChange={f('address')} /></div>
-            <div className="formGroup" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <input type="checkbox" id="isDefault" checked={form.isDefault} onChange={f('isDefault')} />
-              <label htmlFor="isDefault" className="formLabel" style={{ textTransform: 'none', cursor: 'pointer' }}>Склад по умолчанию</label>
+            <div className="formGroup">
+              <div className="formCheckboxRow">
+                <label htmlFor="isDefault">Склад по умолчанию</label>
+                <input type="checkbox" id="isDefault" checked={form.isDefault} onChange={f('isDefault')} />
+              </div>
             </div>
           </div>
           <div className="formActions">
@@ -118,8 +121,9 @@ export function WarehousesPage() {
       )}
 
       {modal === 'delete' && selected && (
-        <Modal title="Удалить склад?" onClose={closeModal} width={400}>
+        <Modal title="Удалить склад" subtitle="Это действие нельзя отменить" onClose={closeModal} size="sm">
           <div className="confirmBox">
+            <div className="confirmBoxIcon"><Trash2 size={22} /></div>
             <p>Удалить <strong>{selected.name}</strong>?</p>
             <div className="confirmActions">
               <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>
