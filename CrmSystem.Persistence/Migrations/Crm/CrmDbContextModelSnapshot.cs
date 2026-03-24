@@ -632,9 +632,6 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<long>("RowVersion")
-                        .HasColumnType("bigint");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -704,9 +701,6 @@ namespace CrmSystem.Persistence.Migrations.Crm
 
                     b.Property<decimal>("Qty")
                         .HasColumnType("numeric");
-
-                    b.Property<long>("RowVersion")
-                        .HasColumnType("bigint");
 
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("numeric");
