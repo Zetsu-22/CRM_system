@@ -4,6 +4,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Company { id: string; name: string }
@@ -30,6 +31,7 @@ const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2 
 const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0', qty: 1, unitPrice: 0, discountType: 'None', discountValue: 0, warehouseId: null })
 
 export function UpdsPage() {
+  const { profile } = useAuth()
   const [upds, setUpds] = useState<Upd[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
@@ -45,6 +47,10 @@ export function UpdsPage() {
     lines: [emptyLine()]
   })
 
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canView = !!(hasFullAccess || profile?.isAccessFinancialJournal)
+  const canEdit = !!(hasFullAccess || profile?.isAccessFinancialJournalEdit)
+
   const load = () => {
     setLoading(true)
     Promise.all([api.get<Upd[]>('/upds'), api.get<Company[]>('/companies'), api.get<Counterparty[]>('/counterparties'), api.get<Item[]>('/items')])
@@ -54,10 +60,12 @@ export function UpdsPage() {
   useEffect(() => { load() }, [])
 
   const openCreate = () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для создания УПД'); return }
     setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', orderId: '', invoiceId: '', function: 'ShippingAndInvoice', status: 'Draft', shippingDate: '', comment: '', lines: [emptyLine()] })
     setModal('create')
   }
   const openEdit = (u: Upd) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для редактирования УПД'); return }
     setSelected(u)
     setForm({ number: u.number ?? '', date: u.date.slice(0, 10), companyId: u.companyId, counterpartyId: u.counterpartyId, orderId: u.orderId ?? '', invoiceId: u.invoiceId ?? '', function: u.function, status: u.status, shippingDate: u.shippingDate?.slice(0, 10) ?? '', comment: u.comment ?? '', lines: u.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: 'None', discountValue: 0, warehouseId: null })) })
     setModal('edit')
@@ -81,6 +89,7 @@ export function UpdsPage() {
   })
 
   const handleSave = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
     if (!form.companyId || !form.counterpartyId) { toast('error', 'Выберите организацию и контрагента'); return }
     if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
     setSaving(true)
@@ -91,15 +100,16 @@ export function UpdsPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления'); return }
     setSaving(true)
     try { await api.delete(`/upds/${selected!.id}`); toast('success', 'УПД удалён'); load(); closeModal() }
     catch (e: any) { toast('error', e.message ?? 'Ошибка') } finally { setSaving(false) }
   }
 
   return (
-    <PageLayout title="УПД" actions={<button className="btn btn-primary" onClick={openCreate}>+ Создать УПД</button>}>
+    <PageLayout title="УПД" actions={canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Создать УПД</button> : null}>
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : upds.length === 0 ? <div className="tableEmpty">Нет УПД</div> : (
+        {!canView ? <div className="tableEmpty">Нет доступа к УПД</div> : loading ? <div className="tableLoading">Загрузка…</div> : upds.length === 0 ? <div className="tableEmpty">Нет УПД</div> : (
           <table className="crmTable">
             <thead><tr><th>№</th><th>Дата</th><th>Функция</th><th>Статус</th><th>Без НДС</th><th>НДС</th><th>Итого</th><th></th></tr></thead>
             <tbody>
@@ -112,10 +122,14 @@ export function UpdsPage() {
                   <td>{fmt(u.totalNet)}</td>
                   <td>{fmt(u.totalVat)}</td>
                   <td><strong>{fmt(u.totalGross)}</strong></td>
-                  <td onClick={e => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(u)}>Изм.</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => openDelete(u)}>Удал.</button>
-                  </div></td>
+                  <td onClick={e => e.stopPropagation()}>
+                    {canEdit && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(u)}>Изм.</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(u)}>Удал.</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { PageLayout } from '../components/PageLayout'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface StockBalance {
@@ -13,9 +14,13 @@ interface StockBalance {
 }
 
 export function StockPage() {
+  const { profile } = useAuth()
   const [items, setItems] = useState<StockBalance[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canView = !!(hasFullAccess || profile?.isAccessWarehouses)
 
   const load = () => {
     setLoading(true)
@@ -52,7 +57,7 @@ export function StockPage() {
       }
     >
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : filtered.length === 0 ? (
+        {!canView ? <div className="tableEmpty">Нет доступа к остаткам</div> : loading ? <div className="tableLoading">Загрузка…</div> : filtered.length === 0 ? (
           <div className="tableEmpty">{search ? 'Ничего не найдено' : 'Нет данных'}</div>
         ) : (
           <table className="crmTable">

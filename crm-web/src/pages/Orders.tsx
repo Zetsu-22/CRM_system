@@ -4,6 +4,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Company { id: string; name: string }
@@ -75,6 +76,7 @@ const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2,
 const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0', qty: 1, unitPrice: 0, discountType: 'None', discountValue: 0 })
 
 export function OrdersPage() {
+  const { profile } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
@@ -89,6 +91,10 @@ export function OrdersPage() {
     companyId: '', counterpartyId: '', comment: '',
     lines: [emptyLine()]
   })
+
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canViewOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isOrderPicker || profile?.isExpeditor || profile?.isDriver)
+  const canEditOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit)
 
   const load = () => {
     setLoading(true)
@@ -105,11 +111,13 @@ export function OrdersPage() {
   useEffect(() => { load() }, [])
 
   const openCreate = () => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для создания заказа'); return }
     setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', comment: '', lines: [emptyLine()] })
     setModal('create')
   }
 
   const openEdit = (o: Order) => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для редактирования заказа'); return }
     if (LOCKED_STATUSES.includes(o.status)) { toast('error', 'Редактирование недоступно: заказ уже в доставке или завершён'); return }
     setSelected(o)
     setForm({
@@ -122,7 +130,10 @@ export function OrdersPage() {
   }
 
   const openView = (o: Order) => { setSelected(o); setModal('view') }
-  const openDelete = (o: Order) => { setSelected(o); setModal('delete') }
+  const openDelete = (o: Order) => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для удаления заказа'); return }
+    setSelected(o); setModal('delete')
+  }
   const closeModal = () => { setModal(null); setSelected(null) }
 
   const setLine = (i: number, k: string, v: string | number) =>
@@ -158,6 +169,7 @@ export function OrdersPage() {
   })
 
   const transition = async (id: string, action: 'confirm' | 'cancel' | 'next-status', deliveryType?: string) => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для изменения статуса'); return }
     const labels: Record<string, string> = { confirm: 'подтверждён', cancel: 'отменён', 'next-status': 'обновлён' }
     const url = deliveryType ? `/orders/${id}/${action}?deliveryType=${deliveryType}` : `/orders/${id}/${action}`
     try {
@@ -168,6 +180,7 @@ export function OrdersPage() {
   }
 
   const handleSave = async () => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для сохранения'); return }
     if (!form.companyId) { toast('error', 'Выберите организацию'); return }
     if (!form.counterpartyId) { toast('error', 'Выберите контрагента'); return }
     if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
@@ -186,6 +199,7 @@ export function OrdersPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для удаления'); return }
     setSaving(true)
     try {
       await api.delete(`/orders/${selected!.id}`)
@@ -197,10 +211,12 @@ export function OrdersPage() {
 
   return (
     <PageLayout title="Заказы" actions={
-      <button className="btn btn-primary" onClick={openCreate}>+ Создать заказ</button>
+      canEditOrders ? <button className="btn btn-primary" onClick={openCreate}>+ Создать заказ</button> : null
     }>
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : orders.length === 0 ? (
+        {!canViewOrders ? (
+          <div className="tableEmpty">Нет доступа к заказам</div>
+        ) : loading ? <div className="tableLoading">Загрузка…</div> : orders.length === 0 ? (
           <div className="tableEmpty">Нет заказов</div>
         ) : (
           <table className="crmTable">
@@ -220,13 +236,15 @@ export function OrdersPage() {
                   <td>{fmt(o.totalVat)}</td>
                   <td><strong>{fmt(o.totalGross)}</strong></td>
                   <td onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {!LOCKED_STATUSES.includes(o.status) && <button className="btn btn-secondary btn-sm" onClick={() => openEdit(o)}>Изм.</button>}
-                      {o.status === 'Draft' && <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'confirm')}>Подтв.</button>}
-                      {!FINAL_STATUSES.includes(o.status) && o.status !== 'Draft' && <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'next-status')}>Далее ›</button>}
-                      {!FINAL_STATUSES.includes(o.status) && <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Отменить</button>}
-                      <button className="btn btn-danger btn-sm" onClick={() => openDelete(o)}>Удал.</button>
-                    </div>
+                    {canEditOrders && (
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {!LOCKED_STATUSES.includes(o.status) && <button className="btn btn-secondary btn-sm" onClick={() => openEdit(o)}>Изм.</button>}
+                        {o.status === 'Draft' && <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'confirm')}>Подтв.</button>}
+                        {!FINAL_STATUSES.includes(o.status) && o.status !== 'Draft' && <button className="btn btn-primary btn-sm" onClick={() => transition(o.id, 'next-status')}>Далее ›</button>}
+                        {!FINAL_STATUSES.includes(o.status) && <button className="btn btn-danger btn-sm" onClick={() => transition(o.id, 'cancel')}>Отменить</button>}
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(o)}>Удал.</button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -327,10 +345,10 @@ export function OrdersPage() {
             <strong>Итого: {fmt(selected.totalGross)}</strong>
           </div>
           <div className="formActions">
-            {!LOCKED_STATUSES.includes(selected.status) && <button className="btn btn-secondary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}>Редактировать</button>}
-            {selected.status === 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'confirm'); closeModal() }}>Подтвердить</button>}
-            {!FINAL_STATUSES.includes(selected.status) && selected.status !== 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'next-status'); closeModal() }}>Следующий статус ›</button>}
-            {!FINAL_STATUSES.includes(selected.status) && <button className="btn btn-danger" onClick={() => { transition(selected!.id, 'cancel'); closeModal() }}>Отменить</button>}
+            {canEditOrders && !LOCKED_STATUSES.includes(selected.status) && <button className="btn btn-secondary" onClick={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}>Редактировать</button>}
+            {canEditOrders && selected.status === 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'confirm'); closeModal() }}>Подтвердить</button>}
+            {canEditOrders && !FINAL_STATUSES.includes(selected.status) && selected.status !== 'Draft' && <button className="btn btn-primary" onClick={() => { transition(selected!.id, 'next-status'); closeModal() }}>Следующий статус ›</button>}
+            {canEditOrders && !FINAL_STATUSES.includes(selected.status) && <button className="btn btn-danger" onClick={() => { transition(selected!.id, 'cancel'); closeModal() }}>Отменить</button>}
             <button className="btn btn-secondary" onClick={closeModal}>Закрыть</button>
           </div>
         </Modal>

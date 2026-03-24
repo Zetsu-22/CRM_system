@@ -4,6 +4,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Organization {
@@ -17,12 +18,15 @@ interface Organization {
 const emptyForm = () => ({ name: '', address: '', isDefault: false })
 
 export function OrganizationsPage() {
+  const { profile } = useAuth()
   const [items, setItems] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
   const [selected, setSelected] = useState<Organization | null>(null)
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
+
+  const canEdit = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
 
   const load = () => {
     setLoading(true)
@@ -33,16 +37,24 @@ export function OrganizationsPage() {
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setForm(emptyForm()); setModal('create') }
+  const openCreate = () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав'); return }
+    setForm(emptyForm()); setModal('create')
+  }
   const openEdit = (o: Organization) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав'); return }
     setSelected(o)
     setForm({ name: o.name, address: o.address ?? '', isDefault: o.isDefault })
     setModal('edit')
   }
-  const openDelete = (o: Organization) => { setSelected(o); setModal('delete') }
+  const openDelete = (o: Organization) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав'); return }
+    setSelected(o); setModal('delete')
+  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canEdit) { toast('error', 'Недостаточно прав'); return }
     if (!form.name.trim()) return
     setSaving(true)
     try {
@@ -64,6 +76,7 @@ export function OrganizationsPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав'); return }
     if (!selected) return
     setSaving(true)
     try {
@@ -79,10 +92,7 @@ export function OrganizationsPage() {
   }
 
   return (
-    <PageLayout
-      title="Организации"
-      actions={<button className="btn btn-primary" onClick={openCreate}>+ Добавить</button>}
-    >
+    <PageLayout title="Организации" actions={canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button> : null}>
       {loading && <div className="tableLoading">Загрузка...</div>}
 
       {!loading && items.length === 0 && (
@@ -110,9 +120,13 @@ export function OrganizationsPage() {
                   <td>{org.name}</td>
                   <td>{org.address ?? '—'}</td>
                   <td>{org.isDefault ? <span className="badge badge-green">✓ Да</span> : '—'}</td>
-                  <td style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-sm btn-secondary" onClick={() => openEdit(org)}>Изменить</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => openDelete(org)}>Удалить</button>
+                  <td>
+                    {canEdit && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(org)}>Изм.</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(org)}>Удал.</button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

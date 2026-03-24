@@ -4,6 +4,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Counterparty {
@@ -25,12 +26,17 @@ const statusBadge = (s: string) => s === 'Active' ? 'badge-green' : 'badge-red'
 const statusLabel: Record<string, string> = { Active: 'Активен', Blocked: 'Заблокирован' }
 
 export function CounterpartiesPage() {
+  const { profile } = useAuth()
   const [items, setItems] = useState<Counterparty[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
   const [selected, setSelected] = useState<Counterparty | null>(null)
   const [form, setForm] = useState(empty())
   const [saving, setSaving] = useState(false)
+
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canView = !!(hasFullAccess || profile?.isAccessContractors)
+  const canEdit = !!(hasFullAccess || profile?.isAccessContractorsEdit)
 
   const load = () => {
     setLoading(true)
@@ -41,21 +47,29 @@ export function CounterpartiesPage() {
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setForm(empty()); setModal('create') }
+  const openCreate = () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для создания'); return }
+    setForm(empty()); setModal('create')
+  }
   const openEdit = (c: Counterparty) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для редактирования'); return }
     setSelected(c)
     setForm({ name: c.name, fullName: c.fullName ?? '', type: c.type, status: c.status,
       inn: c.inn ?? '', kpp: c.kpp ?? '', ogrn: c.ogrn ?? '',
       paymentTermsDays: c.paymentTermsDays ?? '' })
     setModal('edit')
   }
-  const openDelete = (c: Counterparty) => { setSelected(c); setModal('delete') }
+  const openDelete = (c: Counterparty) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления'); return }
+    setSelected(c); setModal('delete')
+  }
   const closeModal = () => { setModal(null); setSelected(null) }
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
   const handleSave = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
     if (!form.name.trim()) { toast('error', 'Название обязательно'); return }
     setSaving(true)
     const body = { ...form, paymentTermsDays: form.paymentTermsDays === '' ? null : Number(form.paymentTermsDays) }
@@ -73,6 +87,7 @@ export function CounterpartiesPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления'); return }
     setSaving(true)
     try {
       await api.delete(`/counterparties/${selected!.id}`)
@@ -84,10 +99,10 @@ export function CounterpartiesPage() {
 
   return (
     <PageLayout title="Контрагенты" actions={
-      <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button>
+      canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button> : null
     }>
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : items.length === 0 ? (
+        {!canView ? <div className="tableEmpty">Нет доступа к контрагентам</div> : loading ? <div className="tableLoading">Загрузка…</div> : items.length === 0 ? (
           <div className="tableEmpty">Нет контрагентов</div>
         ) : (
           <table className="crmTable">
@@ -102,10 +117,14 @@ export function CounterpartiesPage() {
                   <td><span className={`badge ${statusBadge(c.status)}`}>{statusLabel[c.status] ?? c.status}</span></td>
                   <td>{c.inn || '—'}</td>
                   <td>{c.paymentTermsDays != null ? `${c.paymentTermsDays} дн.` : '—'}</td>
-                  <td><div style={{display:'flex',gap:6}}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>Изменить</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => openDelete(c)}>Удалить</button>
-                  </div></td>
+                  <td>
+                    {canEdit && (
+                      <div style={{display:'flex',gap:6}}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>Изменить</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(c)}>Удалить</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

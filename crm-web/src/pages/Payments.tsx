@@ -3,6 +3,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Company { id: string; name: string }
@@ -23,6 +24,7 @@ const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2 
 const empty = () => ({ type: 'Incoming', companyId: '', counterpartyId: '', date: new Date().toISOString().slice(0, 10), amount: '', paymentMethod: 'Bank', bankReference: '', externalId: '', status: 'Draft' })
 
 export function PaymentsPage() {
+  const { profile } = useAuth()
   const [payments, setPayments] = useState<Payment[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
@@ -32,6 +34,10 @@ export function PaymentsPage() {
   const [form, setForm] = useState(empty())
   const [saving, setSaving] = useState(false)
 
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canView = !!(hasFullAccess || profile?.isAccessFinancialJournal)
+  const canEdit = !!(hasFullAccess || profile?.isAccessFinancialJournalEdit)
+
   const load = () => {
     setLoading(true)
     Promise.all([api.get<Payment[]>('/payments'), api.get<Company[]>('/companies'), api.get<Counterparty[]>('/counterparties')])
@@ -40,13 +46,21 @@ export function PaymentsPage() {
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setForm({ ...empty(), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '' }); setModal('create') }
+  const openCreate = () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для создания платежа'); return }
+    setForm({ ...empty(), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '' });
+    setModal('create')
+  }
   const openEdit = (p: Payment) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для редактирования платежа'); return }
     setSelected(p)
     setForm({ type: p.type, companyId: p.companyId, counterpartyId: p.counterpartyId ?? '', date: p.date.slice(0, 10), amount: String(p.amount), paymentMethod: p.paymentMethod, bankReference: p.bankReference ?? '', externalId: p.externalId ?? '', status: p.status })
     setModal('edit')
   }
-  const openDelete = (p: Payment) => { setSelected(p); setModal('delete') }
+  const openDelete = (p: Payment) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления платежа'); return }
+    setSelected(p); setModal('delete')
+  }
   const closeModal = () => { setModal(null); setSelected(null) }
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -63,8 +77,10 @@ export function PaymentsPage() {
   })
 
   const handleSave = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
     if (!form.companyId) { toast('error', 'Выберите организацию'); return }
-    if (!form.amount || Number(form.amount) <= 0) { toast('error', 'Укажите сумму'); return }
+    if (!form.date) { toast('error', 'Выберите дату'); return }
+    if (!form.amount) { toast('error', 'Введите сумму'); return }
     setSaving(true)
     try {
       modal === 'create' ? await api.post('/payments', buildBody()) : await api.put(`/payments/${selected!.id}`, buildBody())
@@ -73,6 +89,7 @@ export function PaymentsPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления'); return }
     setSaving(true)
     try { await api.delete(`/payments/${selected!.id}`); toast('success', 'Платёж удалён'); load(); closeModal() }
     catch (e: any) { toast('error', e.message ?? 'Ошибка') } finally { setSaving(false) }
@@ -82,9 +99,9 @@ export function PaymentsPage() {
   const cpName = (id: string | null) => id ? (counterparties.find(c => c.id === id)?.name ?? '—') : '—'
 
   return (
-    <PageLayout title="Платежи" actions={<button className="btn btn-primary" onClick={openCreate}>+ Добавить платёж</button>}>
+    <PageLayout title="Платежи" actions={canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button> : null}>
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : payments.length === 0 ? <div className="tableEmpty">Нет платежей</div> : (
+        {!canView ? <div className="tableEmpty">Нет доступа к платежам</div> : loading ? <div className="tableLoading">Загрузка…</div> : payments.length === 0 ? <div className="tableEmpty">Нет платежей</div> : (
           <table className="crmTable">
             <thead><tr><th>Дата</th><th>Тип</th><th>Организация</th><th>Контрагент</th><th>Метод</th><th>Сумма</th><th>Статус</th><th></th></tr></thead>
             <tbody>
@@ -97,10 +114,14 @@ export function PaymentsPage() {
                   <td>{METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}</td>
                   <td><strong>{fmt(p.amount)}</strong></td>
                   <td><span className={`badge ${STATUS_BADGE[p.status] ?? 'badge-gray'}`}>{STATUS_LABELS[p.status] ?? p.status}</span></td>
-                  <td><div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(p)}>Изм.</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => openDelete(p)}>Удал.</button>
-                  </div></td>
+                  <td onClick={e => e.stopPropagation()}>
+                    {canEdit && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(p)}>Изм.</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(p)}>Удал.</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

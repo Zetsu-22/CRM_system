@@ -4,6 +4,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Warehouse {
@@ -16,12 +17,17 @@ interface Warehouse {
 const empty = () => ({ name: '', address: '', isDefault: false })
 
 export function WarehousesPage() {
+  const { profile } = useAuth()
   const [items, setItems] = useState<Warehouse[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
   const [selected, setSelected] = useState<Warehouse | null>(null)
   const [form, setForm] = useState(empty())
   const [saving, setSaving] = useState(false)
+
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canView = !!(hasFullAccess || profile?.isAccessWarehouses)
+  const canEdit = !!(hasFullAccess || profile?.isAccessWarehousesEdit)
 
   const load = () => {
     setLoading(true)
@@ -32,19 +38,27 @@ export function WarehousesPage() {
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setForm(empty()); setModal('create') }
+  const openCreate = () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для создания склада'); return }
+    setForm(empty()); setModal('create')
+  }
   const openEdit = (c: Warehouse) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для редактирования склада'); return }
     setSelected(c)
     setForm({ name: c.name, address: c.address ?? '', isDefault: c.isDefault })
     setModal('edit')
   }
-  const openDelete = (c: Warehouse) => { setSelected(c); setModal('delete') }
+  const openDelete = (c: Warehouse) => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления склада'); return }
+    setSelected(c); setModal('delete')
+  }
   const closeModal = () => { setModal(null); setSelected(null) }
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
   const handleSave = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
     if (!form.name.trim()) { toast('error', 'Название обязательно'); return }
     setSaving(true)
     try {
@@ -61,6 +75,7 @@ export function WarehousesPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления'); return }
     setSaving(true)
     try {
       await api.delete(`/warehouses/${selected!.id}`)
@@ -72,10 +87,10 @@ export function WarehousesPage() {
 
   return (
     <PageLayout title="Склады" actions={
-      <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button>
+      canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button> : null
     }>
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : items.length === 0 ? (
+        {!canView ? <div className="tableEmpty">Нет доступа к складам</div> : loading ? <div className="tableLoading">Загрузка…</div> : items.length === 0 ? (
           <div className="tableEmpty">Нет складов</div>
         ) : (
           <table className="crmTable">
@@ -88,10 +103,14 @@ export function WarehousesPage() {
                   <td><strong>{c.name}</strong></td>
                   <td>{c.address || '—'}</td>
                   <td>{c.isDefault ? <span className="badge badge-green">Да</span> : <span className="badge badge-gray">Нет</span>}</td>
-                  <td><div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>Изменить</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => openDelete(c)}>Удалить</button>
-                  </div></td>
+                  <td onClick={e => e.stopPropagation()}>
+                    {canEdit && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>Изм.</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(c)}>Удал.</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

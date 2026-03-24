@@ -4,6 +4,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import '../components/common.css'
 
 interface Company { id: string; name: string }
@@ -28,6 +29,7 @@ const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2 
 const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0', qty: 1, unitPrice: 0, discountType: 'None', discountValue: 0 })
 
 export function InvoicesPage() {
+  const { profile } = useAuth()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
@@ -38,6 +40,10 @@ export function InvoicesPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ number: '', date: new Date().toISOString().slice(0, 10), companyId: '', counterpartyId: '', orderId: '', status: 'Draft', comment: '', lines: [emptyLine()] })
 
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canView = !!(hasFullAccess || profile?.isAccessFinancialJournal)
+  const canEdit = !!(hasFullAccess || profile?.isAccessFinancialJournalEdit)
+
   const load = () => {
     setLoading(true)
     Promise.all([api.get<Invoice[]>('/invoices'), api.get<Company[]>('/companies'), api.get<Counterparty[]>('/counterparties'), api.get<Item[]>('/items')])
@@ -46,7 +52,11 @@ export function InvoicesPage() {
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', orderId: '', status: 'Draft', comment: '', lines: [emptyLine()] }); setModal('create') }
+  const openCreate = () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для создания счёта'); return }
+    setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', orderId: '', status: 'Draft', comment: '', lines: [emptyLine()] });
+    setModal('create')
+  }
   const openEdit = (inv: Invoice) => { setSelected(inv); setForm({ number: inv.number ?? '', date: inv.date.slice(0, 10), companyId: inv.companyId, counterpartyId: inv.counterpartyId, orderId: inv.orderId ?? '', status: inv.status, comment: inv.comment ?? '', lines: inv.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: 'None', discountValue: 0 })) }); setModal('edit') }
   const openView = (inv: Invoice) => { setSelected(inv); setModal('view') }
   const openDelete = (inv: Invoice) => { setSelected(inv); setModal('delete') }
@@ -63,6 +73,7 @@ export function InvoicesPage() {
   const buildBody = () => ({ number: form.number || null, date: form.date, companyId: form.companyId, counterpartyId: form.counterpartyId, orderId: form.orderId || null, status: form.status, comment: form.comment || null, lines: form.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: Number(l.qty), unitPrice: Number(l.unitPrice), discountType: l.discountType, discountValue: Number(l.discountValue) })) })
 
   const handleSave = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
     if (!form.companyId || !form.counterpartyId) { toast('error', 'Выберите организацию и контрагента'); return }
     if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
     setSaving(true)
@@ -73,15 +84,16 @@ export function InvoicesPage() {
   }
 
   const handleDelete = async () => {
+    if (!canEdit) { toast('error', 'Недостаточно прав для удаления'); return }
     setSaving(true)
     try { await api.delete(`/invoices/${selected!.id}`); toast('success', 'Счёт удалён'); load(); closeModal() }
     catch (e: any) { toast('error', e.message ?? 'Ошибка') } finally { setSaving(false) }
   }
 
   return (
-    <PageLayout title="Счета" actions={<button className="btn btn-primary" onClick={openCreate}>+ Создать счёт</button>}>
+    <PageLayout title="Счета" actions={canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Создать счёт</button> : null}>
       <div className="tableWrap">
-        {loading ? <div className="tableLoading">Загрузка…</div> : invoices.length === 0 ? <div className="tableEmpty">Нет счетов</div> : (
+        {!canView ? <div className="tableEmpty">Нет доступа к счетам</div> : loading ? <div className="tableLoading">Загрузка…</div> : invoices.length === 0 ? <div className="tableEmpty">Нет счетов</div> : (
           <table className="crmTable">
             <thead><tr><th>№</th><th>Дата</th><th>Статус</th><th>Сумма</th><th>НДС</th><th>Итого</th><th>Оплачено</th><th></th></tr></thead>
             <tbody>
@@ -94,10 +106,14 @@ export function InvoicesPage() {
                   <td>{fmt(inv.totalVat)}</td>
                   <td><strong>{fmt(inv.totalGross)}</strong></td>
                   <td style={{ color: inv.paidAmount >= inv.totalGross ? '#2ac36a' : '#eab308' }}>{fmt(inv.paidAmount)}</td>
-                  <td onClick={e => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(inv)}>Изм.</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => openDelete(inv)}>Удал.</button>
-                  </div></td>
+                  <td onClick={e => e.stopPropagation()}>
+                    {canEdit && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(inv)}>Изм.</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => openDelete(inv)}>Удал.</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

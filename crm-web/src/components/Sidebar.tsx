@@ -37,6 +37,13 @@ export function Sidebar() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
 
+  const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const canViewOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isOrderPicker || profile?.isExpeditor || profile?.isDriver)
+  const canViewContractors = !!(hasFullAccess || profile?.isAccessContractors)
+  const canViewNomenclature = !!(hasFullAccess || profile?.isAccessNomenclature)
+  const canViewWarehouses = !!(hasFullAccess || profile?.isAccessWarehouses)
+  const canViewFinancial = !!(hasFullAccess || profile?.isAccessFinancialJournal)
+
   const profiles = (profile?.availableProfiles && profile.availableProfiles.length > 0)
     ? profile.availableProfiles
     : profile
@@ -133,9 +140,21 @@ export function Sidebar() {
 
       {/* ── Navigation ── */}
       <nav className="sidebarNav">
-        {NAV_ITEMS.filter(item => !item.adminOnly || canManageUsers).map(item => (
-          <SidebarNavLink key={item.to} item={item} collapsed={collapsed} />
-        ))}
+        {NAV_ITEMS
+          .filter(item => !item.adminOnly || canManageUsers)
+          .filter(item => {
+            if (!profile) return false
+            if (!profile.companyId && item.to !== '/' && item.to !== '/companies') return false
+            if (item.to === '/orders') return canViewOrders
+            if (item.to === '/counterparties') return canViewContractors
+            if (item.to === '/items') return canViewNomenclature
+            if (item.to === '/warehouses') return canViewWarehouses
+            if (item.to === '/invoices' || item.to === '/upds') return canViewFinancial
+            return true
+          })
+          .map(item => (
+            <SidebarNavLink key={item.to} item={item} collapsed={collapsed} />
+          ))}
       </nav>
 
       {/* ── Footer: expand + logout ── */}
