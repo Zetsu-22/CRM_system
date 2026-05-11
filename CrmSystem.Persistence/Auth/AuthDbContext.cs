@@ -111,8 +111,11 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
         {
             b.ToTable("refresh_tokens");
             b.HasKey(x => x.Id);
-            b.Property(x => x.Token).HasMaxLength(512);
-            b.HasIndex(x => x.Token).IsUnique();
+            b.Property(x => x.TokenHash).HasMaxLength(128);
+            b.Property(x => x.ReplacedByTokenHash).HasMaxLength(128);
+            b.Property(x => x.CreatedByIp).HasMaxLength(64);
+            b.HasIndex(x => x.TokenHash).IsUnique();
+            b.HasIndex(x => x.UserId);
             b.HasOne(x => x.User)
                 .WithMany()
                 .HasForeignKey(x => x.UserId);
@@ -198,16 +201,24 @@ public sealed class AuthUserOrganization : AuditableEntity
     public Guid OrganizationId { get; set; }
 }
 
-/// <summary>Refresh-токен для продления сессии без повторного ввода пароля.</summary>
+/// <summary>
+/// Refresh-токен для продления сессии без повторного ввода пароля.
+/// Хранится SHA-256-хеш токена, сам токен отдаётся клиенту один раз. При refresh старый
+/// ротируется (RevokedAt + ReplacedByTokenHash), выдаётся новый.
+/// </summary>
 public sealed class RefreshToken
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public AuthUser? User { get; set; }
-    public required string Token { get; set; }
-    public DateTimeOffset ExpiresAt { get; set; }
-    public bool IsRevoked { get; set; }
+    public required string TokenHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+    public string? ReplacedByTokenHash { get; set; }
+    public string? CreatedByIp { get; set; }
+
+    public bool IsActive => RevokedAt is null && DateTimeOffset.UtcNow < ExpiresAt;
 }
 
 public sealed class AuthRole : AuditableEntity

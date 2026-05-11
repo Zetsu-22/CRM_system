@@ -60,8 +60,8 @@ public sealed class AuthController(
         }
 
         var profiles = await BuildAvailableProfiles(user, ct);
-        var token = GenerateAccessToken(user);
-        return Ok(new { token, profile = BuildProfile(user, null, profiles) });
+        var pair = await IssueTokenPairAsync(user, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(user, null, profiles) });
     }
 
     // ── POST /api/v1/auth/setup-company ──────────────────────────────────────
@@ -109,8 +109,8 @@ public sealed class AuthController(
         await auth.SaveChangesAsync(ct);
 
         var setupProfiles = await BuildAvailableProfiles(user, ct);
-        var token = GenerateAccessToken(user);
-        return Ok(new { token, profile = BuildProfile(user, company.Name, setupProfiles) });
+        var pair = await IssueTokenPairAsync(user, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(user, company.Name, setupProfiles) });
     }
 
     // ── POST /api/v1/auth/login ───────────────────────────────────────────────
@@ -141,8 +141,65 @@ public sealed class AuthController(
         }
 
         var loginProfiles = await BuildAvailableProfiles(user, ct);
-        var token = GenerateAccessToken(user);
-        return Ok(new { token, profile = BuildProfile(user, companyName, loginProfiles) });
+        var pair = await IssueTokenPairAsync(user, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(user, companyName, loginProfiles) });
+    }
+
+    // ── POST /api/v1/auth/refresh ──────────────────────────────────────────────────────────────
+    // Принимает refresh-токен, ротирует его и выдаёт новую пару access+refresh.
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh([FromBody] RefreshTokenDto dto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+            return BadRequest(new { error = "Не передан refresh-токен" });
+
+        var hash = HashToken(dto.RefreshToken);
+        var existing = await auth.RefreshTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+
+        if (existing is null || !existing.IsActive)
+            return Unauthorized(new { error = "refresh_token_invalid" });
+
+        if (existing.User is null || !existing.User.IsActive)
+            return Unauthorized(new { error = "Аккаунт недоступен" });
+
+        var pair = await IssueTokenPairAsync(existing.User, ct);
+
+        // Ротируем старый
+        existing.RevokedAt = DateTimeOffset.UtcNow;
+        existing.ReplacedByTokenHash = HashToken(pair.RefreshToken);
+        await auth.SaveChangesAsync(ct);
+
+        string? companyName = null;
+        if (existing.User.CompanyId.HasValue)
+        {
+            companyName = await crm.Companies
+                .Where(c => c.Id == existing.User.CompanyId.Value)
+                .Select(c => c.Name)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var profiles = await BuildAvailableProfiles(existing.User, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(existing.User, companyName, profiles) });
+    }
+
+    // ── POST /api/v1/auth/logout ─────────────────────────────────────────────────────────────────
+    // Ревокация refresh-токена. Access-токен живёт до своего естественного истечения.
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenDto dto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+            return NoContent();
+
+        var hash = HashToken(dto.RefreshToken);
+        var existing = await auth.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+        if (existing is not null && existing.RevokedAt is null)
+        {
+            existing.RevokedAt = DateTimeOffset.UtcNow;
+            await auth.SaveChangesAsync(ct);
+        }
+        return NoContent();
     }
 
     // ── GET /api/v1/auth/me ────────────────────────────────────────────────────
@@ -164,9 +221,11 @@ public sealed class AuthController(
         }
 
         var profiles = await BuildAvailableProfiles(user, ct);
-        var freshToken = GenerateAccessToken(user);
-        return Ok(new { token = freshToken, profile = BuildProfile(user, companyName, profiles) });
+        var pair = await IssueTokenPairAsync(user, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(user, companyName, profiles) });
     }
+
+    // /me намеренно не выдаёт refresh — FE вызывает /refresh явно.
 
     // ── GET /api/v1/auth/profiles ────────────────────────────────────────────
     // Список доступных профилей (базовый + компании) — как в fimbiz.
@@ -237,8 +296,8 @@ public sealed class AuthController(
         };
 
         var profiles = await BuildAvailableProfiles(user, ct);
-        var token = GenerateAccessToken(switchedUser);
-        return Ok(new { token, profile = BuildProfile(switchedUser, companyName, profiles) });
+        var pair = await IssueTokenPairAsync(switchedUser, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(switchedUser, companyName, profiles) });
     }
 
     // ── PUT /api/v1/auth/me ────────────────────────────────────────────────────
@@ -254,9 +313,10 @@ public sealed class AuthController(
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await auth.SaveChangesAsync(ct);
 
-        var token = GenerateAccessToken(user);
-        return Ok(new { token, profile = BuildProfile(user, null) });
+        var pair = await IssueTokenPairAsync(user, ct);
+        return Ok(new { token = pair.AccessToken, refreshToken = pair.RefreshToken, profile = BuildProfile(user, null) });
     }
+
 
     // ── PUT /api/v1/auth/me/password ──────────────────────────────────────────
     [HttpPut("me/password")]
@@ -280,6 +340,48 @@ public sealed class AuthController(
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private async Task<(string AccessToken, string RefreshToken, DateTimeOffset RefreshExpiresAt)> IssueTokenPairAsync(AuthUser user, CancellationToken ct)
+    {
+        var access = GenerateAccessToken(user);
+        var refresh = GenerateRefreshTokenString();
+        var refreshDays = config.GetValue<int>("Jwt:RefreshTokenExpiryDays", 30);
+        var expiresAt = DateTimeOffset.UtcNow.AddDays(refreshDays);
+
+        auth.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = HashToken(refresh),
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = expiresAt,
+            CreatedByIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
+        });
+        await auth.SaveChangesAsync(ct);
+
+        return (access, refresh, expiresAt);
+    }
+
+    private static string GenerateRefreshTokenString()
+    {
+        Span<byte> bytes = stackalloc byte[64];
+        RandomNumberGenerator.Fill(bytes);
+        return Base64UrlEncode(bytes);
+    }
+
+    private static string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes);
+    }
+
+    private static string Base64UrlEncode(ReadOnlySpan<byte> bytes)
+    {
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
 
     private string GenerateAccessToken(AuthUser user)
     {
@@ -407,6 +509,8 @@ public sealed record SetupCompanyDto(string CompanyName);
 public sealed record SwitchCompanyDto(Guid? CompanyId);
 
 public sealed record LoginDto(string Email, string Password);
+
+public sealed record RefreshTokenDto(string RefreshToken);
 
 public sealed record UpdateProfileDto(string? FullName, string? Phone);
 

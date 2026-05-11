@@ -30,7 +30,7 @@ export function RegisterPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data?.error ?? `Ошибка ${res.status}`); return }
-      login(data.token as string, data.profile as UserProfile)
+      login(data.token as string, (data.refreshToken as string | undefined) ?? null, data.profile as UserProfile)
       navigate('/', { replace: true })
     } catch {
       setError('Ошибка соединения с сервером')

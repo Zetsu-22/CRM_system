@@ -42,7 +42,7 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (token: string, profile: UserProfile) => void
+  login: (token: string, refreshToken: string | null, profile: UserProfile) => void
   logout: () => void
   updateProfile: (profile: UserProfile) => void
   switchProfile: (companyId: string | null) => Promise<void>
@@ -55,6 +55,7 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 const TOKEN_KEY = 'crm_token'
+const REFRESH_KEY = 'crm_refresh'
 const PROFILE_KEY = 'crm_profile'
 const TARGET_COMPANY_KEY = 'targetCompanyId'
 
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     // Expired or invalid
     localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_KEY)
     localStorage.removeItem(PROFILE_KEY)
     setState({ token: null, profile: null, isAuthenticated: false, isLoading: false })
   }, [])
@@ -113,15 +115,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => controller.abort()
   }, [state.isAuthenticated])
 
-  const login = (token: string, profile: UserProfile) => {
+  const login = (token: string, refreshToken: string | null, profile: UserProfile) => {
     localStorage.setItem(TOKEN_KEY, token)
+    if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken)
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
     localStorage.setItem(TARGET_COMPANY_KEY, profile.companyId ?? '0')
     setState({ token, profile, isAuthenticated: true, isLoading: false })
   }
 
   const logout = () => {
+    const refreshToken = localStorage.getItem(REFRESH_KEY)
+    // Best-effort revoke on the server. Не ждём, не блокируем UI.
+    if (refreshToken) {
+      fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      }).catch(() => { /* ignore */ })
+    }
     localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_KEY)
     localStorage.removeItem(PROFILE_KEY)
     localStorage.removeItem(TARGET_COMPANY_KEY)
     setState({ token: null, profile: null, isAuthenticated: false, isLoading: false })
@@ -155,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             url: window.location.href,
           }))
         } catch { /* ignore */ }
-        login(data.token, data.profile)
+        login(data.token, data.refreshToken ?? null, data.profile)
       }
     } catch { /* ignore */ }
   }, [])
