@@ -1,0 +1,27 @@
+ erDiagram
+  Companies { uuid Id PK; string Name; bool VatPayer }
+  Organizations { uuid Id PK; uuid CompanyId FK; string Name; string Inn; string Kpp }
+  Counterparties { uuid Id PK; uuid CompanyId FK; string Name; int Type; int Status; string Inn }
+  Items { uuid Id PK; uuid CompanyId FK; string Sku; string Name; int VatRate; bool IsStockItem }
+  Warehouses { uuid Id PK; uuid CompanyId FK; string Name }
+  StockBalances { uuid Id PK; uuid WarehouseId FK; uuid ItemId FK; decimal QtyOnHand; decimal QtyReserved }
+  SalesOrders { uuid Id PK; uuid CompanyId FK; uuid CounterpartyId FK; string Number; date Date; int Status; decimal TotalGross; jsonb LinesJson }
+  Invoices { uuid Id PK; uuid CompanyId FK; uuid CounterpartyId FK; uuid OrderId FK; string Number; date Date; decimal TotalGross; jsonb LinesJson }
+  Upds { uuid Id PK; uuid CompanyId FK; uuid CounterpartyId FK; uuid OrderId FK; string Number; date Date; int Status; jsonb LinesJson }
+  Payments { uuid Id PK; uuid CompanyId FK; uuid OrderId FK; uuid InvoiceId FK; date Date; decimal Amount }
+  Users { uuid Id PK; uuid CompanyId FK; string Email; string FullName; bool IsActive }
+  Roles { uuid Id PK; string Name }
+  Companies ||--o{ Organizations : FK
+  Companies ||--o{ Counterparties : FK
+  Companies ||--o{ Items : FK
+  Companies ||--o{ Warehouses : FK
+  Companies ||--o{ SalesOrders : FK
+  Companies ||--o{ Users : FK
+  Warehouses ||--o{ StockBalances : FK
+  Items ||--o{ StockBalances : FK
+  Counterparties ||--o{ SalesOrders : FK
+  SalesOrders ||--o| Invoices : FK
+  SalesOrders ||--o| Upds : FK
+  SalesOrders ||--o{ Payments : FK
+  Invoices ||--o{ Payments : FK
+  

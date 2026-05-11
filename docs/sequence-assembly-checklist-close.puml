@@ -1,0 +1,33 @@
+@startuml
+title Закрытие чеклиста сборки (роль: Сборщик)
+
+actor "Сборщик" as Picker
+participant "Веб-клиент\n(crm-web)" as Web
+participant "API заказов\n(CrmSystem.Api)" as Api
+participant "Проверка прав\n([AuthorizeRole])" as Auth
+participant "Контекст БД\n(EF Core)" as Db
+database "База данных\n(PostgreSQL)" as Pg
+
+Picker -> Web : Нажать "Закрыть чеклист"
+Web -> Api : POST /api/v1/orders/{id}/assembly-checklist/close
+
+Api -> Auth : Проверка прав (IsOrderPicker)
+alt Нет прав
+  Auth --> Api : forbidden
+  Api --> Web : 403 Forbidden
+  Web --> Picker : Показать ошибку
+else Есть права
+  Auth --> Api : ok
+  Api -> Db : Load order
+  Db -> Pg : SELECT orders WHERE id
+  Pg --> Db : row
+  Db --> Api : entity
+  Api -> Db : Set IsAssemblyChecklistClosed=true
+  Db -> Pg : UPDATE orders
+  Pg --> Db : ok
+  Db --> Api : SaveChanges ok
+  Api --> Web : 200 OK
+  Web --> Picker : Обновить UI
+end
+
+@enduml

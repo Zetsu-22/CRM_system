@@ -1,0 +1,32 @@
+@startuml
+title Изменение статуса заказа (Подтвердить / Следующий статус / Отменить)
+
+actor "Пользователь" as User
+participant "Веб-клиент\n(crm-web)" as Web
+participant "API заказов\n(CrmSystem.Api)" as Api
+participant "Сервис статусов\n(OrderStatusService)" as StatusSvc
+participant "Контекст БД\n(EF Core)" as Db
+database "База данных\n(PostgreSQL)" as Pg
+
+User -> Web : Нажать кнопку изменения статуса
+Web -> Api : POST /api/v1/orders/{id}/status (action)
+Api -> Db : Load order
+Db -> Pg : SELECT orders WHERE id
+Pg --> Db : row
+Db --> Api : entity
+
+Api -> StatusSvc : Validate transition
+StatusSvc --> Api : NewStatus / error
+
+alt Переход запрещён
+  Api --> Web : 409 Conflict (invalid_state)
+  Web --> User : Показать ошибку
+else Переход разрешён
+  Api -> Db : Update Status
+  Db -> Pg : UPDATE orders SET status=...
+  Pg --> Db : ok
+  Db --> Api : SaveChanges ok
+  Api --> Web : 200 OK (OrderResponse)
+end
+
+@enduml

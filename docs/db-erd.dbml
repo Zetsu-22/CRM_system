@@ -1,0 +1,133 @@
+Table Companies {
+  Id uuid [pk]
+  Name varchar
+  VatPayer boolean
+}
+
+Table Organizations {
+  Id uuid [pk]
+  CompanyId uuid
+  Name varchar
+  Inn varchar
+  Kpp varchar
+}
+
+Table Counterparties {
+  Id uuid [pk]
+  CompanyId uuid
+  Name varchar
+  Type int
+  Status int
+  Inn varchar
+}
+
+Table Items {
+  Id uuid [pk]
+  CompanyId uuid
+  Sku varchar
+  Name varchar
+  VatRate int
+  IsStockItem boolean
+}
+
+Table Warehouses {
+  Id uuid [pk]
+  CompanyId uuid
+  Name varchar
+}
+
+Table StockBalances {
+  Id uuid [pk]
+  WarehouseId uuid
+  ItemId uuid
+  QtyOnHand decimal
+  QtyReserved decimal
+}
+
+Table SalesOrders {
+  Id uuid [pk]
+  CompanyId uuid
+  CounterpartyId uuid
+  Number varchar
+  Date date
+  Status int
+  TotalGross decimal
+  LinesJson jsonb
+}
+
+Table Invoices {
+  Id uuid [pk]
+  CompanyId uuid
+  CounterpartyId uuid
+  OrderId uuid
+  Number varchar
+  Date date
+  TotalGross decimal
+  LinesJson jsonb
+}
+
+Table Upds {
+  Id uuid [pk]
+  CompanyId uuid
+  CounterpartyId uuid
+  OrderId uuid
+  Number varchar
+  Date date
+  Status int
+  LinesJson jsonb
+}
+
+Table Payments {
+  Id uuid [pk]
+  CompanyId uuid
+  OrderId uuid
+  InvoiceId uuid
+  Date date
+  Amount decimal
+}
+
+Table Users {
+  Id uuid [pk]
+  CompanyId uuid
+  Email varchar
+  FullName varchar
+  IsActive boolean
+}
+
+Table Roles {
+  Id uuid [pk]
+  Name varchar
+}
+
+Table UserRoles {
+  Id uuid [pk]
+  UserId uuid
+  RoleId uuid
+}
+
+Ref: Organizations.CompanyId > Companies.Id
+Ref: Counterparties.CompanyId > Companies.Id
+Ref: Items.CompanyId > Companies.Id
+Ref: Warehouses.CompanyId > Companies.Id
+Ref: SalesOrders.CompanyId > Companies.Id
+Ref: Users.CompanyId > Companies.Id
+
+Ref: StockBalances.WarehouseId > Warehouses.Id
+Ref: StockBalances.ItemId > Items.Id
+
+Ref: SalesOrders.CounterpartyId > Counterparties.Id
+
+Ref: Invoices.CompanyId > Companies.Id
+Ref: Invoices.CounterpartyId > Counterparties.Id
+Ref: Invoices.OrderId > SalesOrders.Id
+
+Ref: Upds.CompanyId > Companies.Id
+Ref: Upds.CounterpartyId > Counterparties.Id
+Ref: Upds.OrderId > SalesOrders.Id
+
+Ref: Payments.CompanyId > Companies.Id
+Ref: Payments.OrderId > SalesOrders.Id
+Ref: Payments.InvoiceId > Invoices.Id
+
+Ref: UserRoles.UserId > Users.Id
+Ref: UserRoles.RoleId > Roles.Id

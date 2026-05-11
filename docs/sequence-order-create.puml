@@ -1,0 +1,34 @@
+@startuml
+title Создание заказа (sequence)
+
+actor "Пользователь" as User
+participant "Веб-клиент\n(crm-web)" as Web
+participant "API заказов\n(CrmSystem.Api)" as Api
+participant "Контекст БД\n(EF Core)" as Db
+database "База данных\n(PostgreSQL)" as Pg
+
+User -> Web : Открыть форму "Новый заказ"
+Web -> Api : GET /api/v1/counterparties
+Api -> Db : Query counterparties
+Db -> Pg : SELECT ...
+Pg --> Db : rows
+Db --> Api : entities
+Api --> Web : 200 OK (list)
+
+Web -> Api : GET /api/v1/items
+Api -> Db : Query items
+Db -> Pg : SELECT ...
+Pg --> Db : rows
+Db --> Api : entities
+Api --> Web : 200 OK (list)
+
+User -> Web : Заполнить данные и позиции
+Web -> Api : POST /api/v1/orders (SalesOrderDto)
+Api -> Db : Добавить заказ (позиции внутри сущности)
+Db -> Pg : INSERT orders
+Pg --> Db : ok
+Db --> Api : SaveChanges ok
+Api --> Web : 200 OK (OrderResponse)
+Web --> User : Показать созданный заказ
+
+@enduml

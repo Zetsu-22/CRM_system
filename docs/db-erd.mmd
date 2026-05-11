@@ -1,0 +1,209 @@
+erDiagram
+  %% =========================
+  %% CRM (CrmDbContext)
+  %% =========================
+  companies {
+    uuid Id PK
+    string Name
+    bool VatPayer
+  }
+
+  organizations {
+    uuid Id PK
+    uuid CompanyId FK
+    string Name
+  }
+
+  counterparties {
+    uuid Id PK
+    uuid CompanyId
+    string Name
+    int Type
+    int Status
+  }
+
+  counterparty_addresses {
+    uuid Id PK
+    uuid CounterpartyId FK
+    int Type
+    string AddressLine
+  }
+
+  counterparty_contacts {
+    uuid Id PK
+    uuid CounterpartyId FK
+    string Name
+    string Phone
+    string Email
+  }
+
+  items {
+    uuid Id PK
+    uuid CompanyId
+    string Sku
+    string Name
+    int VatRate
+    bool IsStockItem
+  }
+
+  warehouses {
+    uuid Id PK
+    uuid CompanyId
+    string Name
+  }
+
+  stock_balances {
+    uuid Id PK
+    uuid WarehouseId FK
+    uuid ItemId FK
+    decimal QtyOnHand
+    decimal QtyReserved
+  }
+
+  orders {
+    uuid Id PK
+    uuid CompanyId FK
+    uuid CounterpartyId FK
+    string Number
+    date Date
+    int Status
+    string Comment
+  }
+
+  order_lines {
+    uuid Id PK
+    uuid OrderId FK
+    uuid ItemId FK
+    uuid WarehouseId
+    decimal Qty
+    decimal UnitPrice
+    int VatRateSnapshot
+  }
+
+  invoices {
+    uuid Id PK
+    uuid CompanyId
+    uuid CounterpartyId
+    uuid OrderId
+    string Number
+    date Date
+    int Status
+    decimal TotalNet
+    decimal TotalVat
+    decimal TotalGross
+    decimal PaidAmount
+  }
+
+  invoice_lines {
+    uuid Id PK
+    uuid InvoiceId FK
+    uuid ItemId
+    decimal Qty
+    decimal UnitPrice
+    int VatRateSnapshot
+  }
+
+  payments {
+    uuid Id PK
+    uuid CompanyId
+    uuid OrganizationId
+    date Date
+    decimal Amount
+    int Status
+  }
+
+  payment_allocations {
+    uuid Id PK
+    uuid PaymentId FK
+    uuid InvoiceId FK
+    decimal Amount
+  }
+
+  upds {
+    uuid Id PK
+    uuid CompanyId
+    uuid CounterpartyId
+    uuid OrderId
+    string Number
+    date Date
+    int Status
+  }
+
+  upd_lines {
+    uuid Id PK
+    uuid UpdId FK
+    uuid ItemId
+    decimal Qty
+    decimal UnitPrice
+    int VatRateSnapshot
+  }
+
+  %% =========================
+  %% AUTH (AuthDbContext)
+  %% =========================
+  users {
+    uuid Id PK
+    uuid CompanyId
+    string Email
+    string FullName
+    bool IsActive
+    bool IsCompanyOwner
+    bool IsBasicProfile
+  }
+
+  roles {
+    uuid Id PK
+    string Name
+  }
+
+  permissions {
+    uuid Id PK
+    string Code
+  }
+
+  user_roles {
+    uuid Id PK
+    uuid UserId FK
+    uuid RoleId FK
+  }
+
+  role_permissions {
+    uuid Id PK
+    uuid RoleId FK
+    uuid PermissionId FK
+  }
+
+  user_organizations {
+    uuid Id PK
+    uuid UserId FK
+    uuid OrganizationId
+  }
+
+  refresh_tokens {
+    uuid Id PK
+    uuid UserId FK
+    date CreatedAt
+    date ExpiresAt
+  }
+
+  %% Relationships (реальные FK из snapshot'ов)
+  companies ||--o{ organizations : CompanyId
+  counterparties ||--o{ counterparty_addresses : CounterpartyId
+  counterparties ||--o{ counterparty_contacts : CounterpartyId
+  items ||--o{ stock_balances : ItemId
+  warehouses ||--o{ stock_balances : WarehouseId
+  companies ||--o{ orders : CompanyId
+  counterparties ||--o{ orders : CounterpartyId
+  orders ||--o{ order_lines : OrderId
+  items ||--o{ order_lines : ItemId
+  warehouses ||--o{ order_lines : WarehouseId
+  invoices ||--o{ invoice_lines : InvoiceId
+  payments ||--o{ payment_allocations : PaymentId
+  invoices ||--o{ payment_allocations : InvoiceId
+  upds ||--o{ upd_lines : UpdId
+  users ||--o{ user_roles : UserId
+  roles ||--o{ user_roles : RoleId
+  roles ||--o{ role_permissions : RoleId
+  permissions ||--o{ role_permissions : PermissionId
+  users ||--o{ user_organizations : UserId
+  users ||--o{ refresh_tokens : UserId

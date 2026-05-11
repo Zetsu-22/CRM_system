@@ -1,0 +1,38 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Владелец" as Owner
+actor "Редактор заказов" as OrderEditor
+actor "Экспедитор" as Expeditor
+actor "Сборщик" as Picker
+actor "Водитель" as Driver
+
+rectangle "CRM система" {
+  usecase "Полный доступ" as UC_All
+  usecase "Работа с заказами" as UC_Orders
+  usecase "Просмотр заказов" as UC_OrderView
+  usecase "Закрытие чеклиста сборки" as UC_Checklist
+  usecase "Управление справочниками\n(контрагенты, товары)" as UC_Refs
+  usecase "Просмотр остатков\n(по товарам)" as UC_Stock
+  usecase "Финансовые документы\n(счета, УПД, платежи)" as UC_Fin
+  usecase "Администрирование пользователей" as UC_Users
+}
+
+Expeditor --|> OrderEditor
+
+Owner --> UC_All
+OrderEditor --> UC_Orders
+Picker --> UC_Checklist
+Picker --> UC_OrderView
+Driver --> UC_OrderView
+
+UC_All ..> UC_Orders : <<include>>
+UC_All ..> UC_Refs : <<include>>
+UC_All ..> UC_Stock : <<include>>
+UC_All ..> UC_Fin : <<include>>
+UC_All ..> UC_Users : <<include>>
+UC_Orders ..> UC_OrderView : <<include>>
+UC_Orders ..> UC_Fin : <<include>>
+
+@enduml

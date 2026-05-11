@@ -1,0 +1,36 @@
+@startuml
+title Редактирование заказа + конфликт конкуренции (409)
+
+actor "Пользователь" as User
+participant "Веб-клиент\n(crm-web)" as Web
+participant "API заказов\n(CrmSystem.Api)" as Api
+participant "Контекст БД\n(EF Core)" as Db
+database "База данных\n(PostgreSQL)" as Pg
+
+User -> Web : Открыть заказ
+Web -> Api : GET /api/v1/orders/{id}
+Api -> Db : Загрузить заказ (позиции внутри)
+Db -> Pg : SELECT orders
+Pg --> Db : data
+Db --> Api : entity
+Api --> Web : 200 OK (OrderResponse + RowVersion)
+
+User -> Web : Изменить поля/позиции
+Web -> Api : PUT /api/v1/orders/{id} (RowVersion)
+Api -> Db : Load current order
+Db -> Pg : SELECT orders WHERE id
+Pg --> Db : current row
+Db --> Api : current entity
+
+alt RowVersion не совпадает
+  Api --> Web : 409 Conflict (concurrency_conflict)
+  Web --> User : Сообщение: обновите страницу
+else RowVersion совпадает
+  Api -> Db : Apply changes
+  Db -> Pg : UPDATE orders
+  Pg --> Db : ok
+  Db --> Api : SaveChanges ok
+  Api --> Web : 200 OK (updated order)
+end
+
+@enduml

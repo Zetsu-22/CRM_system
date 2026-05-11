@@ -1,0 +1,114 @@
+@startuml
+hide circle
+skinparam linetype ortho
+
+entity "companies" as companies {
+  * Id : uuid
+}
+
+entity "organizations" as organizations {
+  * Id : uuid
+  --
+  CompanyId : uuid
+}
+
+entity "counterparties" as counterparties {
+  * Id : uuid
+  --
+  CompanyId : uuid
+}
+
+entity "counterparty_addresses" as counterparty_addresses {
+  * Id : uuid
+  --
+  CounterpartyId : uuid
+}
+
+entity "counterparty_contacts" as counterparty_contacts {
+  * Id : uuid
+  --
+  CounterpartyId : uuid
+}
+
+entity "items" as items {
+  * Id : uuid
+  --
+  CompanyId : uuid
+  Sku : varchar
+}
+
+entity "warehouses" as warehouses {
+  * Id : uuid
+  --
+  CompanyId : uuid
+}
+
+entity "stock_balances" as stock_balances {
+  * Id : uuid
+  --
+  WarehouseId : uuid
+  ItemId : uuid
+}
+
+entity "orders" as orders {
+  * Id : uuid
+  --
+  CompanyId : uuid
+  CounterpartyId : uuid
+}
+
+entity "order_lines" as order_lines {
+  * Id : uuid
+  --
+  OrderId : uuid
+  ItemId : uuid
+  WarehouseId : uuid
+}
+
+entity "invoices" as invoices {
+  * Id : uuid
+}
+
+entity "invoice_lines" as invoice_lines {
+  * Id : uuid
+  --
+  InvoiceId : uuid
+}
+
+entity "payments" as payments {
+  * Id : uuid
+}
+
+entity "payment_allocations" as payment_allocations {
+  * Id : uuid
+  --
+  PaymentId : uuid
+  InvoiceId : uuid
+}
+
+entity "upds" as upds {
+  * Id : uuid
+}
+
+entity "upd_lines" as upd_lines {
+  * Id : uuid
+  --
+  UpdId : uuid
+}
+
+organizations }o--|| companies : CompanyId
+counterparty_addresses }o--|| counterparties : CounterpartyId
+counterparty_contacts }o--|| counterparties : CounterpartyId
+stock_balances }o--|| warehouses : WarehouseId
+stock_balances }o--|| items : ItemId
+orders }o--|| companies : CompanyId
+orders }o--|| counterparties : CounterpartyId
+order_lines }o--|| orders : OrderId
+order_lines }o--|| items : ItemId
+order_lines }o--|| warehouses : WarehouseId
+invoice_lines }o--|| invoices : InvoiceId
+payment_allocations }o--|| payments : PaymentId
+payment_allocations }o--|| invoices : InvoiceId
+upd_lines }o--|| upds : UpdId
+
+@enduml

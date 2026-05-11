@@ -1,0 +1,56 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+rectangle "crm-web\n(React + TypeScript)" as Web {
+  component "src/pages" as WebPages
+  component "OrderDetailPanel" as WebOrderDetail
+  component "OrderUpsertPanel" as WebOrderUpsert
+  component "axios\nHTTP client" as WebAxios
+  component "react-router-dom\nмаршрутизация" as WebRouter
+  component "bootstrap\nстили" as WebBootstrap
+}
+
+rectangle "CrmSystem.Api\n(ASP.NET Core Web API)" as Api {
+  component "REST Controllers" as ApiControllers
+  component "DTO" as ApiDto
+  component "OrderStatusService\nпереходы статусов" as ApiStatus
+  component "[AuthorizeRole]\nпроверка прав" as ApiAuth
+  component "DI container" as ApiDi
+}
+
+rectangle "CrmSystem.Persistence\n(EF Core + PostgreSQL)" as Persistence {
+  component "CrmDbContext" as DbContext
+  component "Миграции" as Migrations
+  component "Конфигурации\n(ModelBuilder)" as Configs
+}
+
+rectangle "CrmSystem.Domain\n(модель предметной области)" as Domain {
+  component "Сущности" as DomainEntities
+  component "Enum'ы\n(OrderStatus и др.)" as DomainEnums
+}
+
+database "PostgreSQL" as Pg
+
+WebRouter -down-> WebPages
+WebPages -down-> WebOrderDetail
+WebPages -down-> WebOrderUpsert
+WebPages -down-> WebAxios
+
+WebAxios -right-> ApiControllers : HTTP (REST)
+ApiControllers -down-> ApiDto
+ApiControllers -down-> ApiAuth
+ApiControllers -down-> ApiStatus
+ApiControllers -down-> ApiDi
+
+ApiControllers -right-> DbContext
+ApiStatus -right-> DomainEnums
+ApiDto -right-> DomainEntities
+
+DbContext -down-> Configs
+DbContext -down-> Migrations
+DbContext -right-> DomainEntities
+DbContext -right-> Pg
+
+@enduml
