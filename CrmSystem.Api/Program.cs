@@ -157,3 +157,6 @@ app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" })); // legacy
 app.MapControllers();
 
 app.Run();
+
+// Сделать класс Program доступным из тестового проекта (WebApplicationFactory<Program>).
+public partial class Program;
