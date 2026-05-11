@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using CrmSystem.Api.Services;
+using CrmSystem.Api.Infrastructure;
 using CrmSystem.Persistence;
 using CrmSystem.Persistence.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -60,6 +61,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// ── ProblemDetails + Global exception handler ───────────────────────────────
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = ctx =>
+    {
+        ctx.ProblemDetails.Extensions["traceId"] = ctx.HttpContext.TraceIdentifier;
+        ctx.ProblemDetails.Instance ??= ctx.HttpContext.Request.Path;
+    };
+});
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 // ── Controllers ───────────────────────────────────────────────────────────────
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
@@ -85,6 +97,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
