@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using CrmSystem.Api.Services;
 using CrmSystem.Api.Infrastructure;
+using FluentValidation;
 using CrmSystem.Persistence;
 using CrmSystem.Persistence.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -73,8 +74,11 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
+// ── FluentValidation ───────────────────────────────────────────────
+builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+
 // ── Controllers ───────────────────────────────────────────────────────────────
-builder.Services.AddControllers()
+builder.Services.AddControllers(o => o.Filters.Add<ValidationFilter>())
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
@@ -118,9 +122,14 @@ builder.Services.AddDbContext<AuthDbContext>(options =>
 builder.Services.AddDbContext<CrmDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("CrmDb")));
 
-// ── Services ──────────────────────────────────────────────────────────────────
+// ── Services ───────────────────────────────────────────────────────────────────
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();
+
+// ── Health checks ───────────────────────────────────────────────────
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AuthDbContext>("auth-db")
+    .AddDbContextCheck<CrmDbContext>("crm-db");
 
 var app = builder.Build();
 
@@ -141,7 +150,9 @@ app.UseSerilogRequestLogging();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
+// ── Health endpoints ──────────────────────────────────────────────────
+app.MapHealthChecks("/health");
+app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" })); // legacy compatibility
 
 app.MapControllers();
 

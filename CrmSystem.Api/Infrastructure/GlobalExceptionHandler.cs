@@ -1,7 +1,8 @@
-using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using DataAnnotationsValidationException = System.ComponentModel.DataAnnotations.ValidationException;
+using FluentValidationException = FluentValidation.ValidationException;
 
 namespace CrmSystem.Api.Infrastructure;
 
@@ -25,14 +26,33 @@ public sealed class GlobalExceptionHandler(
 
         httpContext.Response.StatusCode = status;
 
-        var details = new ProblemDetails
+        ProblemDetails details;
+
+        if (exception is FluentValidationException fv)
         {
-            Status = status,
-            Title = title,
-            Type = type,
-            Detail = exception.Message,
-            Instance = httpContext.Request.Path,
-        };
+            var errors = fv.Errors
+                .GroupBy(e => e.PropertyName)
+                .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
+
+            details = new ValidationProblemDetails(errors)
+            {
+                Status = status,
+                Title = title,
+                Type = type,
+                Instance = httpContext.Request.Path,
+            };
+        }
+        else
+        {
+            details = new ProblemDetails
+            {
+                Status = status,
+                Title = title,
+                Type = type,
+                Detail = exception.Message,
+                Instance = httpContext.Request.Path,
+            };
+        }
 
         if (env.IsDevelopment())
             details.Extensions["exception"] = exception.GetType().FullName;
@@ -47,7 +67,8 @@ public sealed class GlobalExceptionHandler(
 
     private static (int status, string title, string type) Map(Exception ex) => ex switch
     {
-        ValidationException                => (StatusCodes.Status400BadRequest,  "Validation failed",   "https://tools.ietf.org/html/rfc7231#section-6.5.1"),
+        FluentValidationException          => (StatusCodes.Status400BadRequest,  "Validation failed",   "https://tools.ietf.org/html/rfc7231#section-6.5.1"),
+        DataAnnotationsValidationException => (StatusCodes.Status400BadRequest,  "Validation failed",   "https://tools.ietf.org/html/rfc7231#section-6.5.1"),
         KeyNotFoundException               => (StatusCodes.Status404NotFound,    "Resource not found",  "https://tools.ietf.org/html/rfc7231#section-6.5.4"),
         UnauthorizedAccessException        => (StatusCodes.Status401Unauthorized,"Unauthorized",        "https://tools.ietf.org/html/rfc7235#section-3.1"),
         DbUpdateConcurrencyException       => (StatusCodes.Status409Conflict,    "Concurrency conflict","https://tools.ietf.org/html/rfc7231#section-6.5.8"),

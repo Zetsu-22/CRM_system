@@ -23,5 +23,8 @@ Thumbs.db
 
 # Local notes (Cascade / dev)
 progress.txt
+
+# Runtime logs from Serilog
+**/logs/
 docs/_local/
 
