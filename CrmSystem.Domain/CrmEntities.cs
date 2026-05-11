@@ -1,1 +1,0 @@
-namespace CrmSystem.Domain;
