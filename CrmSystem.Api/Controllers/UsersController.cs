@@ -31,6 +31,29 @@ public sealed class UsersController(AuthDbContext auth, CurrentUserService curre
 
         return Ok(users);
     }
+    [HttpGet("for-orders")]
+    public async Task<IActionResult> GetForOrders(CancellationToken ct)
+    {
+        if (!currentUser.CanViewOrders)
+            return Forbid();
+
+        var companyId = currentUser.CompanyId;
+        var users = await auth.Users
+            .Where(u => u.CompanyId == companyId && u.IsActive)
+            .OrderBy(u => u.FullName ?? u.Email)
+            .Select(u => new UserForOrdersDto(
+                u.Id,
+                u.FullName ?? u.Email,
+                u.IsOrderPicker,
+                u.IsDriver,
+                u.IsAccessOrdersEdit,
+                u.IsExpeditor,
+                u.IsCompanyOwner,
+                u.IsBasicProfile))
+            .ToListAsync(ct);
+
+        return Ok(users);
+    }
 
     // ── GET /api/v1/users/{id} ────────────────────────────────────────────────
     [HttpGet("{id:guid}")]
@@ -250,3 +273,13 @@ public sealed record UpdatePermissionsDto(
 public sealed record UpdateUserProfileDto(string? FullName, string? Phone);
 
 public sealed record ResetPasswordDto(string NewPassword);
+
+public sealed record UserForOrdersDto(
+    Guid Id,
+    string DisplayName,
+    bool IsOrderPicker,
+    bool IsDriver,
+    bool IsAccessOrdersEdit,
+    bool IsExpeditor,
+    bool IsCompanyOwner,
+    bool IsBasicProfile);

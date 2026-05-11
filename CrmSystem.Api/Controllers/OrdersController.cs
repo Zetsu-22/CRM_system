@@ -12,16 +12,50 @@ namespace CrmSystem.Api.Controllers;
 [Authorize]
 public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : ControllerBase
 {
-    static OrderResponse ToResponse(SalesOrder o) => new(
+    async Task<Dictionary<Guid, decimal>> GetAvailableQtyByItemId(Guid companyId, IReadOnlyCollection<Guid> itemIds, CancellationToken ct)
+    {
+        if (itemIds.Count == 0) return new Dictionary<Guid, decimal>();
+
+        // доступное = QtyOnHand - QtyReserved по всем складам компании
+        var rows = await db.StockBalances
+            .AsNoTracking()
+            .Include(x => x.Warehouse)
+            .Where(x => itemIds.Contains(x.ItemId) && x.Warehouse != null && x.Warehouse.CompanyId == companyId)
+            .Select(x => new { x.ItemId, Available = x.QtyOnHand - x.QtyReserved })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.ItemId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Available));
+    }
+
+    static bool NeedsManufacturing(SalesOrder o, IReadOnlyDictionary<Guid, decimal> availableByItemId)
+    {
+        foreach (var l in o.Lines)
+        {
+            availableByItemId.TryGetValue(l.ItemId, out var available);
+            if (available < l.Qty) return true;
+        }
+        return false;
+    }
+
+    static OrderResponse ToResponse(SalesOrder o, IReadOnlyDictionary<Guid, decimal> availableByItemId) => new(
         o.Id, o.Number, o.Date, o.CompanyId, o.Company?.Name,
         o.CounterpartyId, o.Counterparty?.Name,
         o.Status, o.Comment, o.TotalNet, o.TotalVat, o.TotalGross,
         o.IsAssemblyChecklistClosed,
+        o.PickerId, o.DriverId, o.BankAccount, o.Contract, o.DeliveryAddress,
         o.CreatedAt, o.UpdatedAt,
-        o.Lines.Select(l => new OrderLineResponse(
-            l.Id, l.ItemId, l.Item?.Name, l.NameSnapshot, l.VatRateSnapshot,
-            l.Qty, l.UnitPrice, l.DiscountType, l.DiscountValue,
-            l.Net, l.Vat, l.Gross, l.WarehouseId)).ToList());
+        o.Lines.Select(l =>
+        {
+            availableByItemId.TryGetValue(l.ItemId, out var available);
+            return new OrderLineResponse(
+                l.Id, l.ItemId, l.Item?.Name, l.NameSnapshot, l.VatRateSnapshot,
+                l.Qty, l.UnitPrice, l.DiscountType, l.DiscountValue,
+                l.Net, l.Vat, l.Gross, l.WarehouseId,
+                available);
+        }).ToList(),
+        o.RowVersion);
 
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
@@ -35,7 +69,10 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
             .Include(x => x.Lines).ThenInclude(l => l.Item)
             .OrderByDescending(x => x.Date)
             .ToListAsync(ct);
-        return Ok(list.Select(ToResponse));
+
+        var itemIds = list.SelectMany(x => x.Lines).Select(l => l.ItemId).Distinct().ToList();
+        var availableByItemId = await GetAvailableQtyByItemId(cu.CompanyId.Value, itemIds, ct);
+        return Ok(list.Select(x => ToResponse(x, availableByItemId)));
     }
 
     [HttpGet("{id:guid}")]
@@ -48,7 +85,11 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
             .Include(x => x.Counterparty)
             .Include(x => x.Lines).ThenInclude(l => l.Item)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        return item is null ? NotFound() : Ok(ToResponse(item));
+        if (item is null) return NotFound();
+
+        var itemIds = item.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var availableByItemId = await GetAvailableQtyByItemId(cu.CompanyId.Value, itemIds, ct);
+        return Ok(ToResponse(item, availableByItemId));
     }
 
     [HttpPost]
@@ -65,6 +106,11 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
             CounterpartyId = dto.CounterpartyId,
             Status = OrderStatus.Draft,
             Comment = dto.Comment,
+            PickerId = dto.PickerId,
+            DriverId = dto.DriverId,
+            BankAccount = dto.BankAccount,
+            Contract = dto.Contract,
+            DeliveryAddress = dto.DeliveryAddress,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
@@ -102,7 +148,10 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         await db.Entry(entity).Reference(x => x.Company).LoadAsync(ct);
         await db.Entry(entity).Reference(x => x.Counterparty).LoadAsync(ct);
         foreach (var l in entity.Lines) await db.Entry(l).Reference(x => x.Item).LoadAsync(ct);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, ToResponse(entity));
+
+        var itemIds = entity.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var availableByItemId = await GetAvailableQtyByItemId(cu.CompanyId.Value, itemIds, ct);
+        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, ToResponse(entity, availableByItemId));
     }
 
     [HttpPut("{id:guid}")]
@@ -111,24 +160,46 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         if (!cu.IsAccessOrdersEdit) return Forbid();
         if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
         var entity = await db.Orders
-            .Include(x => x.Lines)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         if (IsLocked(entity.Status))
             return Conflict(new { error = new { code = "invalid_state", message = $"Нельзя редактировать заказ в статусе '{entity.Status}'. Редактирование заблокировано после передачи в доставку." } });
 
+        if (dto.RowVersion.HasValue && dto.RowVersion.Value != entity.RowVersion)
+            return Conflict(new
+            {
+                error = new
+                {
+                    code = "concurrency_conflict",
+                    message = "Заказ был изменён или удалён. Обновите страницу и повторите попытку.",
+                    details = new
+                    {
+                        reason = "row_version_mismatch",
+                        expectedRowVersion = entity.RowVersion,
+                        requestRowVersion = dto.RowVersion
+                    }
+                }
+            });
+
         entity.Number = dto.Number;
         entity.Date = dto.Date;
         entity.CounterpartyId = dto.CounterpartyId;
         entity.Comment = dto.Comment;
+        entity.PickerId = dto.PickerId;
+        entity.DriverId = dto.DriverId;
+        entity.BankAccount = dto.BankAccount;
+        entity.Contract = dto.Contract;
+        entity.DeliveryAddress = dto.DeliveryAddress;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
-        foreach (var l in entity.Lines)
-        {
-            l.IsDeleted = true;
-            l.UpdatedAt = DateTimeOffset.UtcNow;
-        }
+        // Hard-delete всех строк заказа через ExecuteDeleteAsync, минуя change tracker.
+        // Включая soft-deleted (IgnoreQueryFilters) — чтобы избежать возможных дублей по PK
+        // от прежних неудачных попыток. См. docs/known-issues.md ORD-002.
+        await db.OrderLines
+            .IgnoreQueryFilters()
+            .Where(x => x.OrderId == id)
+            .ExecuteDeleteAsync(ct);
 
         var now = DateTimeOffset.UtcNow;
         var newLines = new List<SalesOrderLine>(dto.Lines.Count);
@@ -140,6 +211,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
             var newLine = new SalesOrderLine
             {
                 Id = Guid.NewGuid(),
+                OrderId = entity.Id,
                 ItemId = line.ItemId,
                 NameSnapshot = line.NameSnapshot,
                 VatRateSnapshot = line.VatRateSnapshot,
@@ -155,7 +227,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
                 UpdatedAt = now,
             };
             newLines.Add(newLine);
-            entity.Lines.Add(newLine);
+            db.OrderLines.Add(newLine);
         }
 
         entity.TotalNet = newLines.Sum(l => l.Net);
@@ -166,9 +238,29 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException ex)
         {
-            return Conflict(new { error = new { code = "concurrency_conflict", message = "Заказ был изменён или удалён. Обновите страницу и повторите попытку." } });
+            var entries = ex.Entries.Select(e => new
+            {
+                entity = e.Metadata.Name,
+                state = e.State.ToString(),
+                keys = e.Properties.Where(p => p.Metadata.IsPrimaryKey())
+                    .ToDictionary(p => p.Metadata.Name, p => p.CurrentValue)
+            }).ToList();
+
+            return Conflict(new
+            {
+                error = new
+                {
+                    code = "concurrency_conflict",
+                    message = "Заказ был изменён или удалён. Обновите страницу и повторите попытку.",
+                    details = new
+                    {
+                        reason = "db_update_concurrency_exception",
+                        entries
+                    }
+                }
+            });
         }
 
         var updated = await db.Orders
@@ -178,7 +270,10 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
             .Include(x => x.Lines).ThenInclude(l => l.Item)
             .FirstOrDefaultAsync(ct);
 
-        return updated is null ? NotFound() : Ok(ToResponse(updated));
+        if (updated is null) return NotFound();
+        var itemIds = updated.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var availableByItemId = await GetAvailableQtyByItemId(cu.CompanyId.Value, itemIds, ct);
+        return Ok(ToResponse(updated, availableByItemId));
     }
 
     // Статусы, после которых заказ нельзя редактировать (уже в доставке)
@@ -227,13 +322,19 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
     public async Task<IActionResult> NextStatus(Guid id, [FromQuery] string? deliveryType, CancellationToken ct)
     {
         if (!cu.IsAccessOrdersEdit) return Forbid();
-        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
+        var entity = await db.Orders
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return NotFound();
 
         if (entity.Status == OrderStatus.Completed || entity.Status == OrderStatus.Cancelled)
             return Conflict(new { error = new { code = "invalid_transition", message = $"Заказ в финальном статусе '{entity.Status}', переход невозможен." } });
 
-        var next = GetNextStatus(entity.Status, deliveryType);
+        var itemIds = entity.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var availableByItemId = await GetAvailableQtyByItemId(cu.CompanyId!.Value, itemIds, ct);
+        var needsManufacturing = NeedsManufacturing(entity, availableByItemId);
+
+        var next = GetNextStatus(entity.Status, deliveryType, needsManufacturing);
         if (next is null)
             return Conflict(new { error = new { code = "invalid_transition", message = $"Нет следующего статуса для '{entity.Status}'." } });
 
@@ -243,7 +344,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         return Ok(new { id = entity.Id, status = entity.Status });
     }
 
-    static OrderStatus? GetNextStatus(OrderStatus current, string? deliveryType)
+    static OrderStatus? GetNextStatus(OrderStatus current, string? deliveryType, bool needsManufacturing)
     {
         // selfPickup: после Picking → AwaitingPickup (пропускаем транспортные и Delivering)
         if (deliveryType == "selfPickup" && current == OrderStatus.Picking)
@@ -262,6 +363,10 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         var next = (OrderStatus)((int)current + 1);
         if (!Enum.IsDefined(typeof(OrderStatus), next)) return null;
 
+        // Manufacturing должен появляться только если есть дефицит по складу
+        if (next == OrderStatus.Manufacturing && !needsManufacturing)
+            return OrderStatus.Picking;
+
         // Пропускаем Delivering при transportCompany
         if (deliveryType == "transportCompany" && next == OrderStatus.Delivering)
             return OrderStatus.AwaitingPickup;
@@ -269,7 +374,7 @@ public sealed class OrdersController(CrmDbContext db, CurrentUserService cu) : C
         // Пропускаем транспортные статусы при selfPickup/companyDelivery
         if ((deliveryType == "selfPickup" || deliveryType == "companyDelivery") &&
             (next == OrderStatus.TransferredToTransport || next == OrderStatus.DeliveringByTransport))
-            return GetNextStatus(next, deliveryType); // рекурсивно пропускаем
+            return GetNextStatus(next, deliveryType, needsManufacturing); // рекурсивно пропускаем
 
         return next;
     }
@@ -314,7 +419,13 @@ public sealed record SalesOrderDto(
     DateOnly Date,
     Guid CounterpartyId,
     string? Comment,
-    List<SalesOrderLineDto> Lines);
+    Guid? PickerId,
+    Guid? DriverId,
+    string? BankAccount,
+    string? Contract,
+    string? DeliveryAddress,
+    List<SalesOrderLineDto> Lines,
+    uint? RowVersion = null);
 
 public sealed record SalesOrderLineDto(
     Guid ItemId,
@@ -331,7 +442,8 @@ public sealed record StatusDto(OrderStatus Status);
 public sealed record OrderLineResponse(
     Guid Id, Guid ItemId, string? ItemName, string NameSnapshot, VatRate VatRateSnapshot,
     decimal Qty, decimal UnitPrice, DiscountType DiscountType, decimal DiscountValue,
-    decimal Net, decimal Vat, decimal Gross, Guid? WarehouseId);
+    decimal Net, decimal Vat, decimal Gross, Guid? WarehouseId,
+    decimal AvailableQty);
 
 public sealed record OrderResponse(
     Guid Id, string? Number, DateOnly Date,
@@ -340,5 +452,7 @@ public sealed record OrderResponse(
     OrderStatus Status, string? Comment,
     decimal TotalNet, decimal TotalVat, decimal TotalGross,
     bool IsAssemblyChecklistClosed,
+    Guid? PickerId, Guid? DriverId, string? BankAccount, string? Contract, string? DeliveryAddress,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
-    List<OrderLineResponse> Lines);
+    List<OrderLineResponse> Lines,
+    uint RowVersion);

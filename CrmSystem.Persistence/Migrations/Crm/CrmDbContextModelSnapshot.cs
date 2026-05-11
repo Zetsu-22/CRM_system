@@ -607,11 +607,17 @@ namespace CrmSystem.Persistence.Migrations.Crm
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BankAccount")
+                        .HasColumnType("text");
+
                     b.Property<string>("Comment")
                         .HasColumnType("text");
 
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Contract")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("CounterpartyId")
                         .HasColumnType("uuid");
@@ -625,6 +631,12 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
+                    b.Property<string>("DeliveryAddress")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("DriverId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsAssemblyChecklistClosed")
                         .HasColumnType("boolean");
 
@@ -634,6 +646,9 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<string>("Number")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("PickerId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
