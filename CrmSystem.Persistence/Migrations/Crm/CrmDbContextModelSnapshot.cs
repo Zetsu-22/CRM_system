@@ -650,6 +650,12 @@ namespace CrmSystem.Persistence.Migrations.Crm
                     b.Property<Guid?>("PickerId")
                         .HasColumnType("uuid");
 
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

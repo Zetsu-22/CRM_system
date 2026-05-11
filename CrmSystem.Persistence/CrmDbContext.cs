@@ -182,7 +182,7 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasKey(x => x.Id);
             b.Property(x => x.Number).HasMaxLength(32);
             b.HasIndex(x => x.Number);
-            b.Ignore(x => x.RowVersion);
+            ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
 
             b.HasOne(x => x.Company)
