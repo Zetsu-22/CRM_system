@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Trash2, ShoppingCart } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { OrderDetailPanel } from '../components/OrderDetailPanel'
+import { OrderUpsertPanel } from '../components/OrderUpsertPanel'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
@@ -11,6 +12,13 @@ import '../components/common.css'
 interface Company { id: string; name: string }
 interface Counterparty { id: string; name: string }
 interface Item { id: string; name: string; sku: string; unit: string; vatRate: string }
+
+interface UserForOrders {
+  id: string
+  displayName: string
+  isOrderPicker: boolean
+  isDriver: boolean
+}
 
 interface OrderLine {
   id: string
@@ -24,6 +32,7 @@ interface OrderLine {
   net: number
   vat: number
   gross: number
+  availableQty?: number
 }
 
 interface Order {
@@ -39,6 +48,50 @@ interface Order {
   comment: string | null
   isAssemblyChecklistClosed: boolean
   lines: OrderLine[]
+  rowVersion?: number
+  pickerId?: string | null
+  driverId?: string | null
+  bankAccount?: string | null
+  contract?: string | null
+  deliveryAddress?: string | null
+}
+
+type ApiOrder = {
+  id: string
+  number: string | null
+  date: string
+  companyId: string
+  companyName: string | null
+  counterpartyId: string
+  counterpartyName: string | null
+  status: string
+  comment: string | null
+  pickerId: string | null
+  driverId: string | null
+  bankAccount: string | null
+  contract: string | null
+  deliveryAddress: string | null
+  totalNet: number
+  totalVat: number
+  totalGross: number
+  isAssemblyChecklistClosed: boolean
+  rowVersion: number
+  lines: Array<{
+    id: string
+    itemId: string
+    itemName: string | null
+    nameSnapshot: string
+    vatRateSnapshot: string
+    qty: number
+    unitPrice: number
+    discountType: string
+    discountValue: number
+    net: number
+    vat: number
+    gross: number
+    warehouseId: string | null
+    availableQty: number
+  }>
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -71,7 +124,6 @@ const STATUS_BADGE: Record<string, string> = {
 }
 const FINAL_STATUSES = ['Completed', 'Cancelled']
 const LOCKED_STATUSES = ['DeliveringByTransport', 'Delivering', 'AwaitingPickup', 'Completed', 'Cancelled']
-const VAT_VALUES: Record<string, number> = { Vat0: 0, Vat5: 5, Vat7: 7, Vat10: 10, Vat22: 22 }
 
 const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
 
@@ -83,6 +135,7 @@ export function OrdersPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [items, setItems] = useState<Item[]>([])
+  const [users, setUsers] = useState<UserForOrders[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | 'view' | null>(null)
   const [selected, setSelected] = useState<Order | null>(null)
@@ -91,25 +144,70 @@ export function OrdersPage() {
   const [form, setForm] = useState({
     number: '', date: new Date().toISOString().slice(0, 10),
     companyId: '', counterpartyId: '', comment: '',
+    bankAccount: '', contract: '',
+    deliveryType: 'selfPickup', isPriority: false, isLongPicking: false, deliveryAddress: '',
+    pickerId: '', driverId: '',
     lines: [emptyLine()]
   })
 
   const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
   const canViewOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isOrderPicker || profile?.isExpeditor || profile?.isDriver)
-  const canEditOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit)
+  const canEditOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isExpeditor)
 
   const canClosePickingForOrder = (order: Order) =>
     canEditOrders || (!!(profile?.isOrderPicker) && order.status === 'Picking')
 
+  const mapApiOrder = (o: ApiOrder): Order => ({
+    id: o.id,
+    number: o.number,
+    date: o.date,
+    company: o.companyId ? { id: o.companyId, name: o.companyName ?? '—' } : null,
+    counterparty: o.counterpartyId ? { id: o.counterpartyId, name: o.counterpartyName ?? '—' } : null,
+    status: o.status,
+    pickerId: o.pickerId,
+    driverId: o.driverId,
+    bankAccount: o.bankAccount,
+    contract: o.contract,
+    deliveryAddress: o.deliveryAddress,
+    totalNet: o.totalNet,
+    totalVat: o.totalVat,
+    totalGross: o.totalGross,
+    comment: o.comment,
+    isAssemblyChecklistClosed: !!o.isAssemblyChecklistClosed,
+    rowVersion: o.rowVersion,
+    lines: (o.lines ?? []).map(l => ({
+      id: l.id,
+      itemId: l.itemId,
+      nameSnapshot: l.nameSnapshot || l.itemName || '',
+      vatRateSnapshot: l.vatRateSnapshot,
+      qty: l.qty,
+      unitPrice: l.unitPrice,
+      discountType: l.discountType,
+      discountValue: l.discountValue,
+      net: l.net,
+      vat: l.vat,
+      gross: l.gross,
+      availableQty: l.availableQty,
+    }))
+  })
+
+  const getOrderDetails = async (id: string) => {
+    const dto = await api.get<ApiOrder>(`/orders/${id}`)
+    return mapApiOrder(dto)
+  }
+
   const load = () => {
     setLoading(true)
     Promise.all([
-      api.get<Order[]>('/orders'),
+      api.get<ApiOrder[]>('/orders'),
       api.get<Company[]>('/companies'),
       api.get<Counterparty[]>('/counterparties'),
       api.get<Item[]>('/items'),
-    ]).then(([o, c, cp, it]) => {
-      setOrders(o); setCompanies(c); setCounterparties(cp); setItems(it)
+      api.get<UserForOrders[]>('/users/for-orders'),
+    ]).then(([o, c, cp, it, u]) => {
+      setOrders((o ?? []).map(mapApiOrder));
+      setCompanies(c); setCounterparties(cp); setItems(it);
+      setUsers(u ?? [])
     }).catch(() => toast('error', 'Ошибка загрузки данных'))
       .finally(() => setLoading(false))
   }
@@ -117,24 +215,55 @@ export function OrdersPage() {
 
   const openCreate = () => {
     if (!canEditOrders) { toast('error', 'Недостаточно прав для создания заказа'); return }
-    setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', comment: '', lines: [emptyLine()] })
+    setForm({
+      number: '', date: new Date().toISOString().slice(0, 10),
+      companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '',
+      comment: '', bankAccount: '', contract: '',
+      deliveryType: 'selfPickup', isPriority: false, isLongPicking: false, deliveryAddress: '',
+      pickerId: '', driverId: '',
+      lines: [emptyLine()]
+    })
     setModal('create')
   }
 
-  const openEdit = (o: Order) => {
+  const openEdit = async (o: Order) => {
     if (!canEditOrders) { toast('error', 'Недостаточно прав для редактирования заказа'); return }
     if (LOCKED_STATUSES.includes(o.status)) { toast('error', 'Редактирование недоступно: заказ уже в доставке или завершён'); return }
-    setSelected(o)
-    setForm({
-      number: o.number ?? '', date: o.date.slice(0, 10),
-      companyId: o.company?.id ?? '', counterpartyId: o.counterparty?.id ?? '',
-      comment: o.comment ?? '',
-      lines: o.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: l.discountType, discountValue: l.discountValue }))
-    })
-    setModal('edit')
+    setSaving(true)
+    try {
+      const full = await getOrderDetails(o.id)
+      setSelected(full)
+      setForm({
+        number: full.number ?? '', date: full.date.slice(0, 10),
+        companyId: full.company?.id ?? '', counterpartyId: full.counterparty?.id ?? '',
+        comment: full.comment ?? '',
+        bankAccount: full.bankAccount ?? '',
+        contract: full.contract ?? '',
+        deliveryType: 'selfPickup', isPriority: false, isLongPicking: false, deliveryAddress: full.deliveryAddress ?? '',
+        pickerId: full.pickerId ?? '',
+        driverId: full.driverId ?? '',
+        lines: full.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: l.discountType, discountValue: l.discountValue }))
+      })
+      setModal('edit')
+    } catch (e: any) {
+      toast('error', e.message ?? 'Ошибка загрузки заказа')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const openView = (o: Order) => { setSelected(o); setModal('view') }
+  const openView = async (o: Order) => {
+    setSaving(true)
+    try {
+      const full = await getOrderDetails(o.id)
+      setSelected(full)
+      setModal('view')
+    } catch (e: any) {
+      toast('error', e.message ?? 'Ошибка загрузки заказа')
+    } finally {
+      setSaving(false)
+    }
+  }
   const openDelete = (o: Order) => {
     if (!canEditOrders) { toast('error', 'Недостаточно прав для удаления заказа'); return }
     setSelected(o); setModal('delete')
@@ -155,12 +284,18 @@ export function OrdersPage() {
   const addLine = () => setForm(prev => ({ ...prev, lines: [...prev.lines, emptyLine()] }))
   const removeLine = (i: number) => setForm(prev => ({ ...prev, lines: prev.lines.filter((_, idx) => idx !== i) }))
 
-  const buildBody = () => ({
+  const buildBody = (rowVersion?: number) => ({
     number: form.number || null,
     date: form.date,
     companyId: form.companyId,
     counterpartyId: form.counterpartyId,
     comment: form.comment || null,
+    pickerId: form.pickerId || null,
+    driverId: form.driverId || null,
+    bankAccount: form.bankAccount || null,
+    contract: form.contract || null,
+    deliveryAddress: form.deliveryAddress || null,
+    rowVersion: rowVersion ?? null,
     lines: form.lines.map(l => ({
       itemId: l.itemId,
       nameSnapshot: l.nameSnapshot,
@@ -195,7 +330,7 @@ export function OrdersPage() {
         await api.post('/orders', buildBody())
         toast('success', 'Заказ создан')
       } else {
-        await api.put(`/orders/${selected!.id}`, buildBody())
+        await api.put(`/orders/${selected!.id}`, buildBody(selected?.rowVersion))
         toast('success', 'Заказ обновлён')
       }
       load(); closeModal()
@@ -268,69 +403,28 @@ export function OrdersPage() {
       </div>
 
       {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'Новый заказ' : 'Редактировать заказ'} subtitle="Продажа товаров или услуг" onClose={closeModal} size="xl">
-          <div className="formGrid">
-            <div className="formGroup"><label className="formLabel">Номер</label>
-              <input className="formInput" value={form.number} onChange={e => setForm(p => ({ ...p, number: e.target.value }))} placeholder="Авто" /></div>
-            <div className="formGroup"><label className="formLabel">Дата</label>
-              <input className="formInput" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div className="formGroup"><label className="formLabel">Организация *</label>
-              <select className="formSelect" value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
-                <option value="">— выберите —</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select></div>
-            <div className="formGroup"><label className="formLabel">Контрагент *</label>
-              <select className="formSelect" value={form.counterpartyId} onChange={e => setForm(p => ({ ...p, counterpartyId: e.target.value }))}>
-                <option value="">— выберите —</option>
-                {counterparties.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select></div>
-            <div className="formGroup"><label className="formLabel">Комментарий</label>
-              <input className="formInput" value={form.comment} onChange={e => setForm(p => ({ ...p, comment: e.target.value }))} /></div>
-          </div>
-
-          <div className="formSection">
-            <div className="formSectionTitle" style={{ justifyContent: 'space-between' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><ShoppingCart size={14} />Строки заказа</span>
-              <button className="btn btn-secondary btn-sm" onClick={addLine}>+ Строка</button>
-            </div>
-            <div className="tableWrap">
-              <table className="crmTable">
-                <thead><tr><th>Товар</th><th>Название</th><th>Кол-во</th><th>Цена</th><th>НДС</th><th></th></tr></thead>
-                <tbody>
-                  {form.lines.map((l, i) => (
-                    <tr key={i}>
-                      <td>
-                        <select className="formSelect" style={{ minWidth: 160 }} value={l.itemId} onChange={e => setLine(i, 'itemId', e.target.value)}>
-                          <option value="">— товар —</option>
-                          {items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}
-                        </select>
-                      </td>
-                      <td><input className="formInput" value={l.nameSnapshot} onChange={e => setLine(i, 'nameSnapshot', e.target.value)} /></td>
-                      <td><input className="formInput" type="number" style={{ width: 80 }} value={l.qty} onChange={e => setLine(i, 'qty', e.target.value)} /></td>
-                      <td><input className="formInput" type="number" style={{ width: 100 }} value={l.unitPrice} onChange={e => setLine(i, 'unitPrice', e.target.value)} /></td>
-                      <td>
-                        <select className="formSelect" style={{ width: 80 }} value={l.vatRateSnapshot} onChange={e => setLine(i, 'vatRateSnapshot', e.target.value)}>
-                          {Object.entries(VAT_VALUES).map(([k, v]) => <option key={k} value={k}>{v}%</option>)}
-                        </select>
-                      </td>
-                      <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(i)} disabled={form.lines.length === 1}>✕</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="formActions">
-            <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
-          </div>
-        </Modal>
+        <OrderUpsertPanel
+          mode={modal === 'create' ? 'create' : 'edit'}
+          titleNumber={modal === 'edit' ? selected?.number : null}
+          form={form}
+          companies={companies}
+          counterparties={counterparties}
+          items={items}
+          users={users}
+          saving={saving}
+          onClose={closeModal}
+          onSave={handleSave}
+          onChangeForm={patch => setForm(prev => ({ ...prev, ...patch }))}
+          onSetLine={setLine}
+          onAddLine={addLine}
+          onRemoveLine={removeLine}
+        />
       )}
 
       {modal === 'view' && selected && (
         <OrderDetailPanel
           order={selected}
+          users={users}
           canEditOrders={canEditOrders}
           canClosePicking={canClosePickingForOrder(selected)}
           onClose={closeModal}

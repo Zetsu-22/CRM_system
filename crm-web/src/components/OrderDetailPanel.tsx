@@ -16,6 +16,7 @@ export interface OdpOrderLine {
   net: number
   vat: number
   gross: number
+  availableQty?: number
 }
 
 export interface OdpOrder {
@@ -30,6 +31,11 @@ export interface OdpOrder {
   totalGross: number
   comment: string | null
   isAssemblyChecklistClosed: boolean
+  pickerId?: string | null
+  driverId?: string | null
+  bankAccount?: string | null
+  contract?: string | null
+  deliveryAddress?: string | null
   lines: OdpOrderLine[]
 }
 
@@ -84,6 +90,7 @@ const fmtDateShort = (d: string) => {
 
 interface OrderDetailPanelProps {
   order: OdpOrder
+  users?: Array<{ id: string; displayName: string }>
   canEditOrders: boolean
   canClosePicking: boolean
   onClose: () => void
@@ -95,6 +102,7 @@ interface OrderDetailPanelProps {
 
 export function OrderDetailPanel({
   order,
+  users,
   canEditOrders,
   canClosePicking,
   onClose,
@@ -104,13 +112,17 @@ export function OrderDetailPanel({
   onChecklistClosed,
 }: OrderDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<'positions' | 'documents' | 'assembly'>('positions')
+
+  const shortageLines = order.lines.filter(l => (l.availableQty ?? Number.POSITIVE_INFINITY) < l.qty)
+  const hasShortage = shortageLines.length > 0
+
   const [checkedLines, setCheckedLines] = useState<Set<string>>(
-    order.isAssemblyChecklistClosed ? new Set(order.lines.map(l => l.id)) : new Set()
+    order.isAssemblyChecklistClosed ? new Set(shortageLines.map(l => l.id)) : new Set()
   )
   const [closingChecklist, setClosingChecklist] = useState(false)
 
-  const checkedCount = order.lines.filter(l => checkedLines.has(l.id)).length
-  const allLocalChecked = order.lines.length > 0 && order.lines.every(l => checkedLines.has(l.id))
+  const checkedCount = shortageLines.filter(l => checkedLines.has(l.id)).length
+  const allLocalChecked = shortageLines.length > 0 && shortageLines.every(l => checkedLines.has(l.id))
 
   const toggleLine = (lineId: string) => {
     if (!canClosePicking || order.isAssemblyChecklistClosed) return
@@ -143,6 +155,9 @@ export function OrderDetailPanel({
     : order.status === 'Manufacturing' ? '→ Собирается'
     : order.status === 'Processing' ? '→ Ожидает оплаты'
     : 'Следующий статус →'
+
+  const pickerName = order.pickerId ? (users?.find(u => u.id === order.pickerId)?.displayName ?? null) : null
+  const driverName = order.driverId ? (users?.find(u => u.id === order.driverId)?.displayName ?? null) : null
 
   return (
     <div className="odp-overlay">
@@ -222,11 +237,15 @@ export function OrderDetailPanel({
                 </div>
                 <div className="odp-field">
                   <div className="odp-field-label">Банковский счёт</div>
-                  <div className="odp-field-value odp-field-muted">—</div>
+                  <div className="odp-field-value">
+                    {order.bankAccount ? order.bankAccount : <span className="odp-field-muted">—</span>}
+                  </div>
                 </div>
                 <div className="odp-field">
                   <div className="odp-field-label">Договор</div>
-                  <div className="odp-field-value odp-field-muted">—</div>
+                  <div className="odp-field-value">
+                    {order.contract ? order.contract : <span className="odp-field-muted">—</span>}
+                  </div>
                 </div>
               </div>
             </div>
@@ -247,16 +266,18 @@ export function OrderDetailPanel({
                 <FileText size={13} />
                 Документы
               </button>
-              <button
-                className={`odp-tab${activeTab === 'assembly' ? ' active' : ''}`}
-                onClick={() => setActiveTab('assembly')}
-              >
-                <ClipboardCheck size={13} />
-                Сборка
-                {order.isAssemblyChecklistClosed && (
-                  <CheckCircle2 size={13} style={{ color: 'hsl(142,72%,35%)' }} />
-                )}
-              </button>
+              {hasShortage && (
+                <button
+                  className={`odp-tab${activeTab === 'assembly' ? ' active' : ''}`}
+                  onClick={() => setActiveTab('assembly')}
+                >
+                  <ClipboardCheck size={13} />
+                  Сборка
+                  {order.isAssemblyChecklistClosed && (
+                    <CheckCircle2 size={13} style={{ color: 'hsl(142,72%,35%)' }} />
+                  )}
+                </button>
+              )}
             </div>
 
             {/* ── Positions tab ── */}
@@ -327,7 +348,7 @@ export function OrderDetailPanel({
                   <div>
                     <div className="odp-assembly-title">Список сборки</div>
                     <div className="odp-assembly-sub">
-                      Собрано: {order.isAssemblyChecklistClosed ? order.lines.length : checkedCount} из {order.lines.length}
+                      Собрано: {order.isAssemblyChecklistClosed ? shortageLines.length : checkedCount} из {shortageLines.length}
                     </div>
                   </div>
                   {(order.isAssemblyChecklistClosed || allLocalChecked) && (
@@ -339,7 +360,7 @@ export function OrderDetailPanel({
                 </div>
 
                 <div className="odp-assembly-list">
-                  {order.lines.map(l => {
+                  {shortageLines.map(l => {
                     const checked = order.isAssemblyChecklistClosed || checkedLines.has(l.id)
                     return (
                       <label
@@ -393,7 +414,9 @@ export function OrderDetailPanel({
             </div>
             <div className="odp-sidebar-field">
               <div className="odp-sidebar-label">Адрес доставки</div>
-              <div className="odp-sidebar-value odp-sidebar-muted">—</div>
+              <div className={order.deliveryAddress ? 'odp-sidebar-value' : 'odp-sidebar-value odp-sidebar-muted'}>
+                {order.deliveryAddress ? order.deliveryAddress : '—'}
+              </div>
             </div>
             <div className="odp-sidebar-checkbox-group" style={{ marginTop: 4 }}>
               <label className="odp-sidebar-checkbox">
@@ -411,11 +434,15 @@ export function OrderDetailPanel({
             <div className="odp-sidebar-title">Исполнители</div>
             <div className="odp-sidebar-field">
               <div className="odp-sidebar-label">Сборщик</div>
-              <div className="odp-sidebar-value odp-sidebar-muted">Не назначен</div>
+              <div className={pickerName ? 'odp-sidebar-value' : 'odp-sidebar-value odp-sidebar-muted'}>
+                {pickerName ?? 'Не назначен'}
+              </div>
             </div>
             <div className="odp-sidebar-field">
               <div className="odp-sidebar-label">Водитель</div>
-              <div className="odp-sidebar-value odp-sidebar-muted">Не назначен</div>
+              <div className={driverName ? 'odp-sidebar-value' : 'odp-sidebar-value odp-sidebar-muted'}>
+                {driverName ?? 'Не назначен'}
+              </div>
             </div>
           </div>
 
