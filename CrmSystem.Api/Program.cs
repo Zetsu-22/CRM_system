@@ -3,6 +3,9 @@ using System.Text.Json.Serialization;
 using CrmSystem.Api.Services;
 using CrmSystem.Api.Infrastructure;
 using FluentValidation;
+using CrmSystem.Application.Abstractions;
+using CrmSystem.Application.Common;
+using CrmSystem.Application.Orders;
 using CrmSystem.Persistence;
 using CrmSystem.Persistence.Auth;
 using CrmSystem.Persistence.Interceptors;
@@ -116,6 +119,9 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();
 builder.Services.AddScoped<ICurrentUserAccessor>(sp => sp.GetRequiredService<CurrentUserService>());
+builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUserService>());
+builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
+builder.Services.AddScoped<IOrdersService, OrdersService>();
 builder.Services.AddScoped<TenantSaveChangesInterceptor>();
 builder.Services.AddScoped<AuditSaveChangesInterceptor>();
 

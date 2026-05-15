@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="CrmSystem.Api/CrmSystem.Api.csproj" />
+  <Project Path="CrmSystem.Application/CrmSystem.Application.csproj" />
   <Project Path="CrmSystem.Domain/CrmSystem.Domain.csproj" />
   <Project Path="CrmSystem.Persistence/CrmSystem.Persistence.csproj" />
   <Project Path="CrmSystem.Tests/CrmSystem.Tests.csproj" />

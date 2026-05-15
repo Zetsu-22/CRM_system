@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using CrmSystem.Application.Abstractions;
 using CrmSystem.Persistence.Interceptors;
 
 namespace CrmSystem.Api.Services;
@@ -6,9 +7,10 @@ namespace CrmSystem.Api.Services;
 /// <summary>
 /// Читает данные текущего аутентифицированного пользователя из JWT-токена.
 /// Используется во всех контроллерах для проверки прав и tenant-фильтрации.
-/// Также реализует <see cref="ICurrentUserAccessor"/> для Persistence-interceptors.
+/// Также реализует <see cref="ICurrentUserAccessor"/> (Persistence) и
+/// <see cref="ICurrentUser"/> (Application).
 /// </summary>
-public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICurrentUserAccessor
+public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICurrentUserAccessor, ICurrentUser
 {
     private ClaimsPrincipal? Principal => httpContextAccessor.HttpContext?.User;
 

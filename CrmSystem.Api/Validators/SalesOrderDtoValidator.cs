@@ -1,4 +1,4 @@
-using CrmSystem.Api.Controllers;
+using CrmSystem.Application.Orders.Dtos;
 using FluentValidation;
 
 namespace CrmSystem.Api.Validators;
