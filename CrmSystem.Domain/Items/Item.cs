@@ -1,6 +1,6 @@
 namespace CrmSystem.Domain;
 
-public sealed class Item : AuditableEntity
+public sealed class Item : AuditableEntity, ITenantOwned
 {
     public Guid CompanyId { get; set; }
 

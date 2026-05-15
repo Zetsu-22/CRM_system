@@ -1,6 +1,6 @@
 namespace CrmSystem.Domain;
 
-public sealed class Invoice : AuditableEntity
+public sealed class Invoice : AuditableEntity, ITenantOwned
 {
     public string? Number { get; set; }
     public DateOnly Date { get; set; }

@@ -1,6 +1,6 @@
 namespace CrmSystem.Domain;
 
-public sealed class SalesOrder : AuditableEntity
+public sealed class SalesOrder : AuditableEntity, ITenantOwned
 {
     public string? Number { get; set; }
     public DateOnly Date { get; set; }

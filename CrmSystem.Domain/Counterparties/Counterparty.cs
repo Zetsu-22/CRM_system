@@ -1,6 +1,6 @@
 namespace CrmSystem.Domain;
 
-public sealed class Counterparty : AuditableEntity
+public sealed class Counterparty : AuditableEntity, ITenantOwned
 {
     public Guid CompanyId { get; set; }
 

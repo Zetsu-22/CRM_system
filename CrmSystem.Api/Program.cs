@@ -5,6 +5,7 @@ using CrmSystem.Api.Infrastructure;
 using FluentValidation;
 using CrmSystem.Persistence;
 using CrmSystem.Persistence.Auth;
+using CrmSystem.Persistence.Interceptors;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -111,20 +112,30 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// ── Database ──────────────────────────────────────────────────────────────────
-// Auth tables находятся в crm_main, но имеют отдельную таблицу истории миграций
-builder.Services.AddDbContext<AuthDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("AuthDb"),
-        npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistoryAuth")));
-
-// CRM таблицы используют стандартную таблицу __EFMigrationsHistory
-builder.Services.AddDbContext<CrmDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("CrmDb")));
-
-// ── Services ───────────────────────────────────────────────────────────────────
+// ── Services (before DbContext — interceptors need them) ─────────────────────
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();
+builder.Services.AddScoped<ICurrentUserAccessor>(sp => sp.GetRequiredService<CurrentUserService>());
+builder.Services.AddScoped<TenantSaveChangesInterceptor>();
+builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+
+// ── Database ──────────────────────────────────────────────────────────────────
+// Auth tables находятся в crm_main, но имеют отдельную таблицу истории миграций
+builder.Services.AddDbContext<AuthDbContext>((sp, options) =>
+    options
+        .UseNpgsql(
+            builder.Configuration.GetConnectionString("AuthDb"),
+            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistoryAuth"))
+        .AddInterceptors(
+            sp.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+// CRM таблицы используют стандартную таблицу __EFMigrationsHistory
+builder.Services.AddDbContext<CrmDbContext>((sp, options) =>
+    options
+        .UseNpgsql(builder.Configuration.GetConnectionString("CrmDb"))
+        .AddInterceptors(
+            sp.GetRequiredService<TenantSaveChangesInterceptor>(),
+            sp.GetRequiredService<AuditSaveChangesInterceptor>()));
 
 // ── Health checks ───────────────────────────────────────────────────
 builder.Services.AddHealthChecks()

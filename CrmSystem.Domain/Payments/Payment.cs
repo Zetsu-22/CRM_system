@@ -1,6 +1,6 @@
 namespace CrmSystem.Domain;
 
-public sealed class Payment : AuditableEntity
+public sealed class Payment : AuditableEntity, ITenantOwned
 {
     public PaymentType Type { get; set; }
 

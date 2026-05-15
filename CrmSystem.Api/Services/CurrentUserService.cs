@@ -1,12 +1,14 @@
 using System.Security.Claims;
+using CrmSystem.Persistence.Interceptors;
 
 namespace CrmSystem.Api.Services;
 
 /// <summary>
 /// Читает данные текущего аутентифицированного пользователя из JWT-токена.
 /// Используется во всех контроллерах для проверки прав и tenant-фильтрации.
+/// Также реализует <see cref="ICurrentUserAccessor"/> для Persistence-interceptors.
 /// </summary>
-public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor)
+public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICurrentUserAccessor
 {
     private ClaimsPrincipal? Principal => httpContextAccessor.HttpContext?.User;
 
@@ -14,6 +16,11 @@ public sealed class CurrentUserService(IHttpContextAccessor httpContextAccessor)
 
     public Guid UserId => Guid.Parse(Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new InvalidOperationException("UserId claim not found"));
+
+    // Explicit impl for ICurrentUserAccessor: nullable UserId when not authenticated.
+    Guid? ICurrentUserAccessor.UserId =>
+        IsAuthenticated && Guid.TryParse(Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+            ? id : null;
 
     public Guid? CompanyId
     {
