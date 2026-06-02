@@ -3,12 +3,38 @@ import { api } from '../index'
 import { QK } from '../queryKeys'
 import type { Order, OrderStatusHistoryEntry } from '../schemas'
 
+// ── Параметры поиска/фильтрации (Phase 6.11) ──────────────────────────────
+
+export interface OrderSearchParams {
+  search?: string
+  statuses?: string[]   // OrderStatus enum names
+  counterpartyId?: string
+  dateFrom?: string     // ISO date string (YYYY-MM-DD)
+  dateTo?: string
+  totalFrom?: number
+  totalTo?: number
+}
+
+function buildOrdersUrl(orgFilter?: string, params?: OrderSearchParams): string {
+  const qs = new URLSearchParams()
+  if (orgFilter) qs.set('organizationIds', orgFilter)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.statuses?.length) qs.set('statuses', params.statuses.join(','))
+  if (params?.counterpartyId) qs.set('counterpartyId', params.counterpartyId)
+  if (params?.dateFrom) qs.set('dateFrom', params.dateFrom)
+  if (params?.dateTo) qs.set('dateTo', params.dateTo)
+  if (params?.totalFrom != null) qs.set('totalFrom', String(params.totalFrom))
+  if (params?.totalTo != null) qs.set('totalTo', String(params.totalTo))
+  const str = qs.toString()
+  return str ? `/orders?${str}` : '/orders'
+}
+
 // ── Список заказов ─────────────────────────────────────────────────────────
 
-export function useOrders(orgFilter?: string) {
+export function useOrders(orgFilter?: string, searchParams?: OrderSearchParams) {
   return useQuery({
-    queryKey: QK.orders(orgFilter),
-    queryFn: () => api.get<Order[]>('/orders'),
+    queryKey: [...QK.orders(orgFilter), searchParams ?? {}],
+    queryFn: () => api.get<Order[]>(buildOrdersUrl(orgFilter, searchParams)),
   })
 }
 

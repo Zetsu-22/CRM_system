@@ -2,6 +2,7 @@ using CrmSystem.Api.Infrastructure;
 using CrmSystem.Application.Common;
 using CrmSystem.Application.Orders;
 using CrmSystem.Application.Orders.Dtos;
+using CrmSystem.Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PickingChecklistItem = CrmSystem.Application.Orders.Dtos.PickingChecklistItem;
@@ -20,15 +21,47 @@ public sealed class OrdersController(IOrdersService orders) : ControllerBase
         [FromQuery] int? pageSize,
         [FromQuery] string? sortBy,
         [FromQuery] string? sortDirection,
+        // Phase 6.11 — search & filter params
+        [FromQuery] string? search,
+        [FromQuery] string? statuses,
+        [FromQuery] Guid? counterpartyId,
+        [FromQuery] string? dateFrom,
+        [FromQuery] string? dateTo,
+        [FromQuery] decimal? totalFrom,
+        [FromQuery] decimal? totalTo,
         CancellationToken ct)
     {
         var parsed = OrgIdParser.Parse(organizationIds);
+
+        // Build filter — only when at least one filter param is provided
+        var statusList = ParseStatuses(statuses);
+        var parsedDateFrom = string.IsNullOrWhiteSpace(dateFrom) ? (DateOnly?)null : DateOnly.Parse(dateFrom);
+        var parsedDateTo   = string.IsNullOrWhiteSpace(dateTo)   ? (DateOnly?)null : DateOnly.Parse(dateTo);
+
+        var filter = new OrderFilterRequest(search, statusList, counterpartyId, parsedDateFrom, parsedDateTo, totalFrom, totalTo);
+        bool hasFilter = !filter.IsEmpty;
+
         if (page.HasValue)
         {
             var req = new PageRequest(page.Value, pageSize ?? 20, sortBy, sortDirection ?? "asc");
             return (await orders.GetPagedAsync(req, parsed, ct)).ToActionResult(this);
         }
+
+        if (hasFilter)
+            return (await orders.SearchAsync(parsed, filter, ct)).ToActionResult(this);
+
         return (await orders.GetAllAsync(parsed, ct)).ToActionResult(this);
+    }
+
+    private static IReadOnlyList<OrderStatus>? ParseStatuses(string? statuses)
+    {
+        if (string.IsNullOrWhiteSpace(statuses)) return null;
+        var result = statuses.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => Enum.TryParse<OrderStatus>(s.Trim(), true, out var v) ? (OrderStatus?)v : null)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .ToList();
+        return result.Count > 0 ? result : null;
     }
 
     [HttpGet("{id:guid}")]

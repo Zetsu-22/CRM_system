@@ -6,6 +6,7 @@ import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
 import { OrderDetailPanel } from '../components/OrderDetailPanel'
 import { OrderUpsertPanel } from '../components/OrderUpsertPanel'
+import { OrderFiltersPanel } from '../components/OrderFiltersPanel'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import {
@@ -15,6 +16,7 @@ import {
   useUpdateOrder,
   useDeleteOrder,
   useOrderTransition,
+  type OrderSearchParams,
 } from '../api/hooks/useOrders'
 import { useCounterparties } from '../api/hooks/useCounterparties'
 import { useItems } from '../api/hooks/useItems'
@@ -117,6 +119,9 @@ export function OrdersPage() {
   const { organizations, filterString } = useOrganizations()
   const qc = useQueryClient()
 
+  // ── Фильтры (Phase 6.11) ──────────────────────────────────────────────
+  const [searchParams, setSearchParams] = useState<OrderSearchParams>({})
+
   // ── Модальное состояние ────────────────────────────────────────────────
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | 'view' | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -138,7 +143,7 @@ export function OrdersPage() {
   const canEditOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isExpeditor)
 
   // ── Queries ────────────────────────────────────────────────────────────
-  const ordersQuery = useOrders(filterString ?? undefined)
+  const ordersQuery = useOrders(filterString ?? undefined, searchParams)
   const orders: Order[] = (ordersQuery.data as ApiOrder[] | undefined ?? []).map(mapApiOrder)
 
   // Полный заказ для просмотра/редактирования
@@ -297,6 +302,9 @@ export function OrdersPage() {
     <PageLayout title="Заказы" actions={
       canEditOrders ? <button className="btn btn-primary" onClick={openCreate}>+ Создать заказ</button> : null
     }>
+      {canViewOrders && (
+        <OrderFiltersPanel params={searchParams} onChange={setSearchParams} />
+      )}
       <div className="tableWrap">
         {!canViewOrders ? (
           <div className="tableEmpty">Нет доступа к заказам</div>

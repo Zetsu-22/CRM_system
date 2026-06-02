@@ -6,6 +6,9 @@ namespace CrmSystem.Application.Orders;
 public interface IOrdersService
 {
     Task<Result<IReadOnlyList<OrderResponse>>> GetAllAsync(IReadOnlyCollection<Guid>? organizationIds, CancellationToken ct);
+
+    // Phase 6.11 — поиск и фильтрация
+    Task<Result<IReadOnlyList<OrderResponse>>> SearchAsync(IReadOnlyCollection<Guid>? organizationIds, OrderFilterRequest filter, CancellationToken ct);
     Task<Result<PagedResponse<OrderResponse>>> GetPagedAsync(PageRequest request, IReadOnlyCollection<Guid>? organizationIds, CancellationToken ct);
     Task<Result<OrderResponse>> GetByIdAsync(Guid id, CancellationToken ct);
     Task<Result<OrderResponse>> CreateAsync(SalesOrderDto dto, CancellationToken ct);

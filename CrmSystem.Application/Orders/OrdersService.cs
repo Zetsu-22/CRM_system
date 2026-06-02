@@ -36,6 +36,66 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         return Result<IReadOnlyList<OrderResponse>>.Success(result);
     }
 
+    // ── Phase 6.11 — поиск и фильтрация ────────────────────────────────────
+
+    public async Task<Result<IReadOnlyList<OrderResponse>>> SearchAsync(
+        IReadOnlyCollection<Guid>? organizationIds,
+        OrderFilterRequest filter,
+        CancellationToken ct)
+    {
+        if (!cu.CanViewOrders) return Error.Forbidden();
+        if (cu.CompanyId is null) return Result<IReadOnlyList<OrderResponse>>.Success(Array.Empty<OrderResponse>());
+
+        var query = db.Orders
+            .Where(x => x.CompanyId == cu.CompanyId)
+            .Include(x => x.Company)
+            .Include(x => x.Organization)
+            .Include(x => x.Counterparty)
+            .Include(x => x.Lines).ThenInclude(l => l.Item)
+            .AsQueryable();
+
+        // Фильтр по организациям
+        if (organizationIds is { Count: > 0 })
+            query = query.Where(x => organizationIds.Contains(x.OrganizationId));
+
+        // Полнотекстовый поиск (по номеру, имени контрагента, комментарию)
+        if (!string.IsNullOrWhiteSpace(filter.SearchQuery))
+        {
+            var q = filter.SearchQuery.Trim();
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Number ?? "", $"%{q}%") ||
+                EF.Functions.ILike(x.Counterparty!.Name, $"%{q}%") ||
+                EF.Functions.ILike(x.Comment ?? "", $"%{q}%"));
+        }
+
+        // Фильтр по статусам
+        if (filter.Statuses is { Count: > 0 })
+            query = query.Where(x => filter.Statuses.Contains(x.Status));
+
+        // Фильтр по контрагенту
+        if (filter.CounterpartyId is not null)
+            query = query.Where(x => x.CounterpartyId == filter.CounterpartyId);
+
+        // Фильтр по диапазону дат
+        if (filter.DateFrom is not null)
+            query = query.Where(x => x.Date >= filter.DateFrom.Value);
+        if (filter.DateTo is not null)
+            query = query.Where(x => x.Date <= filter.DateTo.Value);
+
+        // Фильтр по сумме
+        if (filter.TotalFrom is not null)
+            query = query.Where(x => x.TotalGross >= filter.TotalFrom.Value);
+        if (filter.TotalTo is not null)
+            query = query.Where(x => x.TotalGross <= filter.TotalTo.Value);
+
+        var list = await query
+            .OrderByDescending(x => x.Date)
+            .ToListAsync(ct);
+
+        IReadOnlyList<OrderResponse> result = list.Select(OrderMapper.ToResponse).ToList();
+        return Result<IReadOnlyList<OrderResponse>>.Success(result);
+    }
+
     public async Task<Result<PagedResponse<OrderResponse>>> GetPagedAsync(PageRequest request, IReadOnlyCollection<Guid>? organizationIds, CancellationToken ct)
     {
         if (!cu.CanViewOrders) return Error.Forbidden();
