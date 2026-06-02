@@ -79,7 +79,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     let message = text || `HTTP ${res.status}`
     try {
       const json = JSON.parse(text)
-      message = json?.error ?? json?.title ?? json?.detail ?? json?.message ?? message
+      // json.error may be a string OR an object {code, message} — extract .message in both cases
+      const errField = json?.error
+      const errMsg = errField == null ? undefined
+        : typeof errField === 'string' ? errField
+        : errField?.message ?? JSON.stringify(errField)
+      message = errMsg ?? json?.title ?? json?.detail ?? json?.message ?? message
     } catch { /* use raw text */ }
     throw new Error(message)
   }

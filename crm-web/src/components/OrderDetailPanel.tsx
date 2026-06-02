@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ChevronLeft, X, ShoppingCart, FileText, ClipboardCheck, CheckCircle2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronLeft, X, ShoppingCart, FileText, ClipboardCheck, CheckCircle2, History } from 'lucide-react'
 import { api } from '../api'
 import { toast } from './Toast'
 import './OrderDetailPanel.css'
@@ -23,7 +23,7 @@ export interface OdpOrder {
   id: string
   number: string | null
   date: string
-  company: { id: string; name: string } | null
+  organization: { id: string; name: string } | null
   counterparty: { id: string; name: string } | null
   status: string
   totalNet: number
@@ -36,7 +36,26 @@ export interface OdpOrder {
   bankAccount?: string | null
   contract?: string | null
   deliveryAddress?: string | null
+  pickingChecklistJson?: string | null
   lines: OdpOrderLine[]
+}
+
+interface PickingChecklistItem {
+  itemId: string
+  name: string
+  qty: number
+  done: boolean
+  doneBy?: string | null
+  doneAt?: string | null
+}
+
+interface StatusHistoryEntry {
+  id: string
+  status: string
+  statusName: string
+  changedAt: string
+  changedBy?: string | null
+  comment?: string | null
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -69,6 +88,21 @@ const STATUS_BADGE: Record<string, string> = {
   Cancelled: 'badge-red',
 }
 
+const STATUS_HISTORY_BADGE: Record<string, string> = {
+  Draft: '#9ca3af',
+  Processing: '#3b82f6',
+  WaitingForPayment: '#f97316',
+  BillConfirmed: '#22c55e',
+  Manufacturing: '#a855f7',
+  Picking: '#14b8a6',
+  TransferredToTransport: '#3b82f6',
+  DeliveringByTransport: '#3b82f6',
+  Delivering: '#22c55e',
+  AwaitingPickup: '#f97316',
+  Completed: '#16a34a',
+  Cancelled: '#ef4444',
+}
+
 const VAT_PCT: Record<string, number> = { Vat0: 0, Vat5: 5, Vat7: 7, Vat10: 10, Vat22: 22 }
 const FINAL_STATUSES = ['Completed', 'Cancelled']
 const LOCKED_STATUSES = ['DeliveringByTransport', 'Delivering', 'AwaitingPickup', 'Completed', 'Cancelled']
@@ -88,6 +122,15 @@ const fmtDateShort = (d: string) => {
   try { return new Date(d).toLocaleDateString('ru-RU') } catch { return d.slice(0, 10) }
 }
 
+const fmtDateTime = (d: string) => {
+  try {
+    return new Date(d).toLocaleString('ru-RU', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    })
+  } catch { return d }
+}
+
 interface OrderDetailPanelProps {
   order: OdpOrder
   users?: Array<{ id: string; displayName: string }>
@@ -96,7 +139,7 @@ interface OrderDetailPanelProps {
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
-  onTransition: (action: 'confirm' | 'cancel' | 'next-status') => void
+  onTransition: (action: 'confirm' | 'cancel' | 'next-status') => Promise<boolean> | void
   onChecklistClosed: (orderId: string) => void
 }
 
@@ -111,27 +154,58 @@ export function OrderDetailPanel({
   onTransition,
   onChecklistClosed,
 }: OrderDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<'positions' | 'documents' | 'assembly'>('positions')
+  const [activeTab, setActiveTab] = useState<'positions' | 'documents' | 'assembly' | 'history'>('positions')
 
-  const shortageLines = order.lines.filter(l => (l.availableQty ?? Number.POSITIVE_INFINITY) < l.qty)
-  const hasShortage = shortageLines.length > 0
-
-  const [checkedLines, setCheckedLines] = useState<Set<string>>(
-    order.isAssemblyChecklistClosed ? new Set(shortageLines.map(l => l.id)) : new Set()
-  )
+  // ── Picking checklist (Phase 4.4) ──────────────────────────────────────────
+  const [checklistItems, setChecklistItems] = useState<PickingChecklistItem[]>(() => {
+    if (!order.pickingChecklistJson) return []
+    try { return JSON.parse(order.pickingChecklistJson) } catch { return [] }
+  })
+  const [markingItem, setMarkingItem] = useState<string | null>(null)
   const [closingChecklist, setClosingChecklist] = useState(false)
 
-  const checkedCount = shortageLines.filter(l => checkedLines.has(l.id)).length
-  const allLocalChecked = shortageLines.length > 0 && shortageLines.every(l => checkedLines.has(l.id))
+  const hasChecklist = checklistItems.length > 0
+  const checkedCount = checklistItems.filter(i => i.done).length
+  const allChecklistDone = hasChecklist && checklistItems.every(i => i.done)
 
-  const toggleLine = (lineId: string) => {
+  // Legacy: shortage lines (fallback when no checklist JSON)
+  const shortageLines = order.lines.filter(l => (l.availableQty ?? Number.POSITIVE_INFINITY) < l.qty)
+  const hasShortage = shortageLines.length > 0
+  const [legacyChecked, setLegacyChecked] = useState<Set<string>>(
+    order.isAssemblyChecklistClosed ? new Set(shortageLines.map(l => l.id)) : new Set()
+  )
+  const legacyCheckedCount = shortageLines.filter(l => legacyChecked.has(l.id)).length
+  const allLegacyChecked = shortageLines.length > 0 && shortageLines.every(l => legacyChecked.has(l.id))
+
+  const showAssemblyTab = hasChecklist || hasShortage || order.status === 'Picking'
+
+  const toggleLegacyLine = (lineId: string) => {
     if (!canClosePicking || order.isAssemblyChecklistClosed) return
-    setCheckedLines(prev => {
+    setLegacyChecked(prev => {
       const next = new Set(prev)
       if (next.has(lineId)) next.delete(lineId)
       else next.add(lineId)
       return next
     })
+  }
+
+  const handleMarkItemDone = async (itemId: string) => {
+    if (!canClosePicking || order.isAssemblyChecklistClosed) return
+    setMarkingItem(itemId)
+    try {
+      const result = await api.post(`/orders/${order.id}/picking-checklist/items/${itemId}/done`, {})
+      if (result?.items) {
+        setChecklistItems(result.items)
+        if (result.isFullyClosed) {
+          toast('success', 'Все позиции собраны! Чек-лист закрыт.')
+          onChecklistClosed(order.id)
+        }
+      }
+    } catch (e: any) {
+      toast('error', e.message ?? 'Ошибка отметки позиции')
+    } finally {
+      setMarkingItem(null)
+    }
   }
 
   const handleCloseChecklist = async () => {
@@ -148,6 +222,20 @@ export function OrderDetailPanel({
     }
   }
 
+  // ── History (Phase 4.1) ────────────────────────────────────────────────────
+  const [history, setHistory] = useState<StatusHistoryEntry[] | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  useEffect(() => {
+    if (activeTab !== 'history' || history !== null) return
+    setHistoryLoading(true)
+    api.get(`/orders/${order.id}/status-history`)
+      .then((data: any) => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => setHistory([]))
+      .finally(() => setHistoryLoading(false))
+  }, [activeTab, order.id, history])
+
+  // ── Derived ────────────────────────────────────────────────────────────────
   const isFinal = FINAL_STATUSES.includes(order.status)
   const isLocked = LOCKED_STATUSES.includes(order.status)
   const isDraft = order.status === 'Draft'
@@ -221,7 +309,7 @@ export function OrderDetailPanel({
               <div className="odp-info-grid">
                 <div className="odp-field">
                   <div className="odp-field-label">Организация</div>
-                  <div className="odp-field-value">{order.company?.name ?? <span className="odp-field-muted">—</span>}</div>
+                  <div className="odp-field-value">{order.organization?.name ?? <span className="odp-field-muted">—</span>}</div>
                 </div>
                 <div className="odp-field">
                   <div className="odp-field-label">Дата</div>
@@ -266,7 +354,7 @@ export function OrderDetailPanel({
                 <FileText size={13} />
                 Документы
               </button>
-              {hasShortage && (
+              {showAssemblyTab && (
                 <button
                   className={`odp-tab${activeTab === 'assembly' ? ' active' : ''}`}
                   onClick={() => setActiveTab('assembly')}
@@ -278,6 +366,13 @@ export function OrderDetailPanel({
                   )}
                 </button>
               )}
+              <button
+                className={`odp-tab${activeTab === 'history' ? ' active' : ''}`}
+                onClick={() => setActiveTab('history')}
+              >
+                <History size={13} />
+                История
+              </button>
             </div>
 
             {/* ── Positions tab ── */}
@@ -344,58 +439,165 @@ export function OrderDetailPanel({
             {/* ── Assembly tab ── */}
             {activeTab === 'assembly' && (
               <div className="odp-tab-content">
-                <div className="odp-assembly-header">
-                  <div>
-                    <div className="odp-assembly-title">Список сборки</div>
-                    <div className="odp-assembly-sub">
-                      Собрано: {order.isAssemblyChecklistClosed ? shortageLines.length : checkedCount} из {shortageLines.length}
-                    </div>
-                  </div>
-                  {(order.isAssemblyChecklistClosed || allLocalChecked) && (
-                    <span className="odp-assembly-done">
-                      <CheckCircle2 size={14} />
-                      Все товары собраны
-                    </span>
-                  )}
-                </div>
-
-                <div className="odp-assembly-list">
-                  {shortageLines.map(l => {
-                    const checked = order.isAssemblyChecklistClosed || checkedLines.has(l.id)
-                    return (
-                      <label
-                        key={l.id}
-                        className={`odp-assembly-item${checked ? ' checked' : ''}${!canClosePicking || order.isAssemblyChecklistClosed ? ' readonly' : ''}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleLine(l.id)}
-                          disabled={!canClosePicking || order.isAssemblyChecklistClosed}
-                        />
-                        <span className="odp-assembly-name">
-                          {l.nameSnapshot} — {l.qty} шт.
+                {hasChecklist ? (
+                  /* ── New picking checklist (Phase 4.4) ── */
+                  <>
+                    <div className="odp-assembly-header">
+                      <div>
+                        <div className="odp-assembly-title">Чек-лист сборки</div>
+                        <div className="odp-assembly-sub">
+                          Собрано: {checkedCount} из {checklistItems.length}
+                        </div>
+                      </div>
+                      {(order.isAssemblyChecklistClosed || allChecklistDone) && (
+                        <span className="odp-assembly-done">
+                          <CheckCircle2 size={14} />
+                          Все товары собраны
                         </span>
-                      </label>
-                    )
-                  })}
-                </div>
+                      )}
+                    </div>
 
-                {canClosePicking && !order.isAssemblyChecklistClosed && (
-                  <div style={{ marginTop: 20 }}>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleCloseChecklist}
-                      disabled={closingChecklist}
-                    >
-                      {closingChecklist ? 'Сохранение…' : 'Закрыть чеклист сборки'}
-                    </button>
+                    <div className="odp-assembly-list">
+                      {checklistItems.map(item => {
+                        const isMarking = markingItem === item.itemId
+                        const canMark = (canClosePicking || canEditOrders) && !order.isAssemblyChecklistClosed && !item.done
+                        return (
+                          <label
+                            key={item.itemId}
+                            className={`odp-assembly-item${item.done ? ' checked' : ''}${!canMark ? ' readonly' : ''}`}
+                            onClick={() => canMark && !isMarking ? handleMarkItemDone(item.itemId) : undefined}
+                            style={{ cursor: canMark ? 'pointer' : 'default' }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={item.done}
+                              onChange={() => {}} // controlled
+                              disabled={!canMark || isMarking}
+                            />
+                            <span className="odp-assembly-name">
+                              {item.name} — {item.qty} шт.
+                              {item.done && item.doneAt && (
+                                <span style={{ fontSize: 11, opacity: 0.55, marginLeft: 6 }}>
+                                  ({fmtDateTime(item.doneAt)})
+                                </span>
+                              )}
+                            </span>
+                            {isMarking && <span style={{ fontSize: 11, opacity: 0.5 }}>…</span>}
+                          </label>
+                        )
+                      })}
+                    </div>
+
+                    {(canClosePicking || canEditOrders) && !order.isAssemblyChecklistClosed && (
+                      <div style={{ marginTop: 20 }}>
+                        <button
+                          className="btn btn-primary"
+                          onClick={handleCloseChecklist}
+                          disabled={closingChecklist}
+                        >
+                          {closingChecklist ? 'Сохранение…' : 'Закрыть чеклист досрочно'}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* ── Legacy shortage-based checklist ── */
+                  <>
+                    <div className="odp-assembly-header">
+                      <div>
+                        <div className="odp-assembly-title">Список сборки</div>
+                        <div className="odp-assembly-sub">
+                          Собрано: {order.isAssemblyChecklistClosed ? shortageLines.length : legacyCheckedCount} из {shortageLines.length}
+                        </div>
+                      </div>
+                      {(order.isAssemblyChecklistClosed || allLegacyChecked) && (
+                        <span className="odp-assembly-done">
+                          <CheckCircle2 size={14} />
+                          Все товары собраны
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="odp-assembly-list">
+                      {shortageLines.map(l => {
+                        const checked = order.isAssemblyChecklistClosed || legacyChecked.has(l.id)
+                        return (
+                          <label
+                            key={l.id}
+                            className={`odp-assembly-item${checked ? ' checked' : ''}${!canClosePicking || order.isAssemblyChecklistClosed ? ' readonly' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleLegacyLine(l.id)}
+                              disabled={!canClosePicking || order.isAssemblyChecklistClosed}
+                            />
+                            <span className="odp-assembly-name">
+                              {l.nameSnapshot} — {l.qty} шт.
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+
+                    {canClosePicking && !order.isAssemblyChecklistClosed && (
+                      <div style={{ marginTop: 20 }}>
+                        <button
+                          className="btn btn-primary"
+                          onClick={handleCloseChecklist}
+                          disabled={closingChecklist}
+                        >
+                          {closingChecklist ? 'Сохранение…' : 'Закрыть чеклист сборки'}
+                        </button>
+                      </div>
+                    )}
+
+                    {!canClosePicking && !order.isAssemblyChecklistClosed && (
+                      <div style={{ marginTop: 16, fontSize: 13, color: 'hsl(var(--muted-foreground))' }}>
+                        Закрыть чеклист может только сборщик (в статусе Собирается) или менеджер заказов.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── History tab (Phase 4.1) ── */}
+            {activeTab === 'history' && (
+              <div className="odp-tab-content">
+                {historyLoading && (
+                  <div style={{ padding: '24px 0', textAlign: 'center', opacity: .5, fontSize: 13 }}>
+                    Загрузка истории…
                   </div>
                 )}
-
-                {!canClosePicking && !order.isAssemblyChecklistClosed && (
-                  <div style={{ marginTop: 16, fontSize: 13, color: 'hsl(var(--muted-foreground))' }}>
-                    Закрыть чеклист может только сборщик (в статусе Собирается) или менеджер заказов.
+                {!historyLoading && history !== null && history.length === 0 && (
+                  <div className="odp-empty-tab" style={{ padding: '32px 0' }}>
+                    <History size={36} style={{ opacity: .2 }} />
+                    <span>История переходов пуста</span>
+                  </div>
+                )}
+                {!historyLoading && history !== null && history.length > 0 && (
+                  <div className="odp-history-list">
+                    {history.map((entry, idx) => (
+                      <div key={entry.id} className="odp-history-item">
+                        <div className="odp-history-dot-col">
+                          <div
+                            className="odp-history-dot"
+                            style={{ background: STATUS_HISTORY_BADGE[entry.status] ?? '#9ca3af' }}
+                          />
+                          {idx < history.length - 1 && <div className="odp-history-line" />}
+                        </div>
+                        <div className="odp-history-body">
+                          <div className="odp-history-status">
+                            {STATUS_LABELS[entry.status] ?? entry.statusName}
+                          </div>
+                          <div className="odp-history-meta">
+                            {fmtDateTime(entry.changedAt)}
+                            {entry.comment && <span className="odp-history-comment"> · {entry.comment}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

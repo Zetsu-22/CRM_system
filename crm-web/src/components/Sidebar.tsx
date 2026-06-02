@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Landmark, Users, Package,
-  Warehouse, ClipboardList, Receipt, FileText,
+  ClipboardList, Receipt, FileText,
   ChevronLeft, ChevronRight, LogOut, ChevronDown,
   UserCog, type LucideIcon,
 } from 'lucide-react'
@@ -23,7 +23,6 @@ const NAV_ITEMS: NavItemDef[] = [
   { to: '/organizations', icon: Landmark,        label: 'Организации' },
   { to: '/counterparties',icon: Users,           label: 'Контрагенты' },
   { to: '/items',         icon: Package,         label: 'Номенклатура' },
-  { to: '/warehouses',    icon: Warehouse,       label: 'Склады' },
   { to: '/orders',        icon: ClipboardList,   label: 'Заказы' },
   { to: '/invoices',      icon: Receipt,         label: 'Счета' },
   { to: '/upds',          icon: FileText,        label: 'УПД' },
@@ -41,7 +40,6 @@ export function Sidebar() {
   const canViewOrders = !!(hasFullAccess || profile?.isAccessOrdersEdit || profile?.isOrderPicker || profile?.isExpeditor || profile?.isDriver)
   const canViewContractors = !!(hasFullAccess || profile?.isAccessContractors)
   const canViewNomenclature = !!(hasFullAccess || profile?.isAccessNomenclature)
-  const canViewWarehouses = !!(hasFullAccess || profile?.isAccessWarehouses)
   const canViewFinancial = !!(hasFullAccess || profile?.isAccessFinancialJournal)
 
   const profiles = (profile?.availableProfiles && profile.availableProfiles.length > 0)
@@ -148,7 +146,6 @@ export function Sidebar() {
             if (item.to === '/orders') return canViewOrders
             if (item.to === '/counterparties') return canViewContractors
             if (item.to === '/items') return canViewNomenclature
-            if (item.to === '/warehouses') return canViewWarehouses
             if (item.to === '/invoices' || item.to === '/upds') return canViewFinancial
             return true
           })

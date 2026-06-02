@@ -20,8 +20,8 @@ export interface Invoice {
   id: string
   number: string | null
   date: string
-  companyId: string
-  companyName?: string
+  organizationId: string
+  organizationName?: string
   counterpartyId: string
   counterpartyName?: string
   orderId: string | null
@@ -129,7 +129,7 @@ export function InvoiceDetailPanel({
               <div className="odp-info-grid">
                 <div className="odp-field">
                   <div className="odp-field-label">Организация</div>
-                  <div className="odp-field-value">{invoice.companyName ?? <span className="odp-field-muted">—</span>}</div>
+                  <div className="odp-field-value">{invoice.organizationName ?? <span className="odp-field-muted">—</span>}</div>
                 </div>
                 <div className="odp-field">
                   <div className="odp-field-label">Дата</div>

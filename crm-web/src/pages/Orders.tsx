@@ -7,9 +7,9 @@ import { OrderUpsertPanel } from '../components/OrderUpsertPanel'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations, type OrgItem } from '../OrganizationContext'
 import '../components/common.css'
 
-interface Company { id: string; name: string }
 interface Counterparty { id: string; name: string }
 interface Item { id: string; name: string; sku: string; unit: string; vatRate: string }
 
@@ -39,7 +39,7 @@ interface Order {
   id: string
   number: string | null
   date: string
-  company: Company | null
+  organization: OrgItem | null
   counterparty: Counterparty | null
   status: string
   totalNet: number
@@ -47,6 +47,7 @@ interface Order {
   totalGross: number
   comment: string | null
   isAssemblyChecklistClosed: boolean
+  pickingChecklistJson?: string | null
   lines: OrderLine[]
   rowVersion?: number
   pickerId?: string | null
@@ -62,6 +63,8 @@ type ApiOrder = {
   date: string
   companyId: string
   companyName: string | null
+  organizationId: string
+  organizationName: string | null
   counterpartyId: string
   counterpartyName: string | null
   status: string
@@ -75,6 +78,7 @@ type ApiOrder = {
   totalVat: number
   totalGross: number
   isAssemblyChecklistClosed: boolean
+  pickingChecklistJson?: string | null
   rowVersion: number
   lines: Array<{
     id: string
@@ -131,8 +135,8 @@ const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0'
 
 export function OrdersPage() {
   const { profile } = useAuth()
+  const { organizations, filterString } = useOrganizations()
   const [orders, setOrders] = useState<Order[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [users, setUsers] = useState<UserForOrders[]>([])
@@ -143,7 +147,7 @@ export function OrdersPage() {
 
   const [form, setForm] = useState({
     number: '', date: new Date().toISOString().slice(0, 10),
-    companyId: '', counterpartyId: '', comment: '',
+    organizationId: '', counterpartyId: '', comment: '',
     bankAccount: '', contract: '',
     deliveryType: 'selfPickup', isPriority: false, isLongPicking: false, deliveryAddress: '',
     pickerId: '', driverId: '',
@@ -161,7 +165,7 @@ export function OrdersPage() {
     id: o.id,
     number: o.number,
     date: o.date,
-    company: o.companyId ? { id: o.companyId, name: o.companyName ?? '—' } : null,
+    organization: o.organizationId ? { id: o.organizationId, name: o.organizationName ?? '—', address: null, isDefault: false } : null,
     counterparty: o.counterpartyId ? { id: o.counterpartyId, name: o.counterpartyName ?? '—' } : null,
     status: o.status,
     pickerId: o.pickerId,
@@ -174,6 +178,7 @@ export function OrdersPage() {
     totalGross: o.totalGross,
     comment: o.comment,
     isAssemblyChecklistClosed: !!o.isAssemblyChecklistClosed,
+    pickingChecklistJson: o.pickingChecklistJson ?? null,
     rowVersion: o.rowVersion,
     lines: (o.lines ?? []).map(l => ({
       id: l.id,
@@ -198,26 +203,27 @@ export function OrdersPage() {
 
   const load = () => {
     setLoading(true)
+    const ordersPath = filterString ? `/orders?organizationIds=${encodeURIComponent(filterString)}` : '/orders'
     Promise.all([
-      api.get<ApiOrder[]>('/orders'),
-      api.get<Company[]>('/companies'),
+      api.get<ApiOrder[]>(ordersPath),
       api.get<Counterparty[]>('/counterparties'),
       api.get<Item[]>('/items'),
       api.get<UserForOrders[]>('/users/for-orders'),
-    ]).then(([o, c, cp, it, u]) => {
+    ]).then(([o, cp, it, u]) => {
       setOrders((o ?? []).map(mapApiOrder));
-      setCompanies(c); setCounterparties(cp); setItems(it);
+      setCounterparties(cp); setItems(it);
       setUsers(u ?? [])
     }).catch(() => toast('error', 'Ошибка загрузки данных'))
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [filterString])
 
   const openCreate = () => {
     if (!canEditOrders) { toast('error', 'Недостаточно прав для создания заказа'); return }
+    const defaultOrganizationId = organizations[0]?.id ?? ''
     setForm({
       number: '', date: new Date().toISOString().slice(0, 10),
-      companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '',
+      organizationId: defaultOrganizationId, counterpartyId: counterparties[0]?.id ?? '',
       comment: '', bankAccount: '', contract: '',
       deliveryType: 'selfPickup', isPriority: false, isLongPicking: false, deliveryAddress: '',
       pickerId: '', driverId: '',
@@ -235,7 +241,7 @@ export function OrdersPage() {
       setSelected(full)
       setForm({
         number: full.number ?? '', date: full.date.slice(0, 10),
-        companyId: full.company?.id ?? '', counterpartyId: full.counterparty?.id ?? '',
+        organizationId: full.organization?.id ?? '', counterpartyId: full.counterparty?.id ?? '',
         comment: full.comment ?? '',
         bankAccount: full.bankAccount ?? '',
         contract: full.contract ?? '',
@@ -287,7 +293,7 @@ export function OrdersPage() {
   const buildBody = (rowVersion?: number) => ({
     number: form.number || null,
     date: form.date,
-    companyId: form.companyId,
+    organizationId: form.organizationId,
     counterpartyId: form.counterpartyId,
     comment: form.comment || null,
     pickerId: form.pickerId || null,
@@ -308,20 +314,21 @@ export function OrdersPage() {
     }))
   })
 
-  const transition = async (id: string, action: 'confirm' | 'cancel' | 'next-status', deliveryType?: string) => {
-    if (!canEditOrders) { toast('error', 'Недостаточно прав для изменения статуса'); return }
+  const transition = async (id: string, action: 'confirm' | 'cancel' | 'next-status', deliveryType?: string): Promise<boolean> => {
+    if (!canEditOrders) { toast('error', 'Недостаточно прав для изменения статуса'); return false }
     const labels: Record<string, string> = { confirm: 'подтверждён', cancel: 'отменён', 'next-status': 'обновлён' }
     const url = deliveryType ? `/orders/${id}/${action}?deliveryType=${deliveryType}` : `/orders/${id}/${action}`
     try {
       await api.post(url, {})
       toast('success', `Статус заказа ${labels[action]}`)
       load()
-    } catch (e: any) { toast('error', e.message ?? 'Ошибка') }
+      return true
+    } catch (e: any) { toast('error', e.message ?? 'Ошибка'); return false }
   }
 
   const handleSave = async () => {
     if (!canEditOrders) { toast('error', 'Недостаточно прав для сохранения'); return }
-    if (!form.companyId) { toast('error', 'Выберите организацию'); return }
+    if (!form.organizationId) { toast('error', 'Выберите организацию'); return }
     if (!form.counterpartyId) { toast('error', 'Выберите контрагента'); return }
     if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
     setSaving(true)
@@ -378,7 +385,7 @@ export function OrdersPage() {
                 <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => openView(o)}>
                   <td>{o.number || '—'}</td>
                   <td>{o.date.slice(0, 10)}</td>
-                  <td>{o.company?.name ?? '—'}</td>
+                  <td>{o.organization?.name ?? '—'}</td>
                   <td>{o.counterparty?.name ?? '—'}</td>
                   <td><span className={`badge ${STATUS_BADGE[o.status] ?? 'badge-gray'}`}>{STATUS_LABELS[o.status] ?? o.status}</span></td>
                   <td>{fmt(o.totalNet)}</td>
@@ -407,7 +414,7 @@ export function OrdersPage() {
           mode={modal === 'create' ? 'create' : 'edit'}
           titleNumber={modal === 'edit' ? selected?.number : null}
           form={form}
-          companies={companies}
+          organizations={organizations}
           counterparties={counterparties}
           items={items}
           users={users}
@@ -430,7 +437,7 @@ export function OrdersPage() {
           onClose={closeModal}
           onEdit={() => { closeModal(); setTimeout(() => openEdit(selected!), 50) }}
           onDelete={() => { closeModal(); setTimeout(() => openDelete(selected!), 50) }}
-          onTransition={action => { transition(selected!.id, action); closeModal() }}
+          onTransition={async action => { const ok = await transition(selected!.id, action); if (ok) closeModal() }}
           onChecklistClosed={handleChecklistClosed}
         />
       )}

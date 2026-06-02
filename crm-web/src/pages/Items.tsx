@@ -5,10 +5,12 @@ import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations } from '../OrganizationContext'
 import '../components/common.css'
 
 interface Item {
   id: string
+  organizationId: string
   type: string
   sku: string
   barcode: string | null
@@ -16,10 +18,12 @@ interface Item {
   description: string | null
   unit: string
   vatRate: string
-  isStockItem: boolean
 }
 
-const empty = () => ({ type: 'Product', sku: '', barcode: '', name: '', description: '', unit: 'шт', vatRate: 'Vat0', isStockItem: true })
+const empty = (orgId: string) => ({
+  organizationId: orgId,
+  type: 'Product', sku: '', barcode: '', name: '', description: '', unit: 'шт', vatRate: 'Vat0',
+})
 
 const typeLabel: Record<string, string> = { Product: 'Товар', Service: 'Услуга' }
 const vatLabel: Record<string, string> = { Vat0: '0%', Vat5: '5%', Vat7: '7%', Vat10: '10%', Vat22: '22%' }
@@ -27,11 +31,12 @@ const vatOptions = Object.entries(vatLabel)
 
 export function ItemsPage() {
   const { profile } = useAuth()
+  const { currentOrganization, filterString } = useOrganizations()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
   const [selected, setSelected] = useState<Item | null>(null)
-  const [form, setForm] = useState(empty())
+  const [form, setForm] = useState(empty(''))
   const [saving, setSaving] = useState(false)
 
   const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
@@ -40,22 +45,27 @@ export function ItemsPage() {
 
   const load = () => {
     setLoading(true)
-    api.get<Item[]>('/items')
+    const qs = filterString ? `?organizationIds=${filterString}` : ''
+    api.get<Item[]>(`/items${qs}`)
       .then(setItems)
       .catch(() => toast('error', 'Не удалось загрузить номенклатуру'))
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [filterString]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreate = () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для создания'); return }
-    setForm(empty()); setModal('create')
+    if (!currentOrganization) { toast('error', 'Выберите организацию в шапке'); return }
+    setForm(empty(currentOrganization.id)); setModal('create')
   }
   const openEdit = (c: Item) => {
     if (!canEdit) { toast('error', 'Недостаточно прав для редактирования'); return }
     setSelected(c)
-    setForm({ type: c.type, sku: c.sku, barcode: c.barcode ?? '', name: c.name,
-      description: c.description ?? '', unit: c.unit, vatRate: c.vatRate, isStockItem: c.isStockItem })
+    setForm({
+      organizationId: c.organizationId,
+      type: c.type, sku: c.sku, barcode: c.barcode ?? '', name: c.name,
+      description: c.description ?? '', unit: c.unit, vatRate: c.vatRate,
+    })
     setModal('edit')
   }
   const openDelete = (c: Item) => {
@@ -65,7 +75,7 @@ export function ItemsPage() {
   const closeModal = () => { setModal(null); setSelected(null) }
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm(prev => ({ ...prev, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }))
+    setForm(prev => ({ ...prev, [k]: e.target.value }))
 
   const handleSave = async () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
@@ -103,7 +113,7 @@ export function ItemsPage() {
         ) : (
           <table className="crmTable">
             <thead><tr>
-              <th>Артикул</th><th>Название</th><th>Тип</th><th>Ед. изм.</th><th>НДС</th><th>Склад</th><th></th>
+              <th>Артикул</th><th>Название</th><th>Тип</th><th>Ед. изм.</th><th>НДС</th><th></th>
             </tr></thead>
             <tbody>
               {items.map(c => (
@@ -113,7 +123,6 @@ export function ItemsPage() {
                   <td>{typeLabel[c.type] ?? c.type}</td>
                   <td>{c.unit}</td>
                   <td>{vatLabel[c.vatRate] ?? c.vatRate}</td>
-                  <td>{c.isStockItem ? <span className="badge badge-blue">Да</span> : <span className="badge badge-gray">Нет</span>}</td>
                   <td onClick={e => e.stopPropagation()}>
                     {canEdit && (
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -153,12 +162,6 @@ export function ItemsPage() {
               </select></div>
             <div className="formGroup"><label className="formLabel">Штрихкод</label>
               <input className="formInput" value={form.barcode} onChange={f('barcode')} /></div>
-            <div className="formGroup full">
-              <div className="formCheckboxRow">
-                <label htmlFor="isStockItem">Складской учёт</label>
-                <input type="checkbox" id="isStockItem" checked={form.isStockItem} onChange={f('isStockItem')} />
-              </div>
-            </div>
           </div>
           <div className="formActions">
             <button className="btn btn-secondary" onClick={closeModal}>Отмена</button>

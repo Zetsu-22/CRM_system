@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations } from '../OrganizationContext'
 import '../components/common.css'
 
 interface Organization {
@@ -19,6 +20,7 @@ const emptyForm = () => ({ name: '', address: '', isDefault: false })
 
 export function OrganizationsPage() {
   const { profile } = useAuth()
+  const { selectedIds } = useOrganizations()
   const [items, setItems] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
@@ -27,6 +29,9 @@ export function OrganizationsPage() {
   const [saving, setSaving] = useState(false)
 
   const canEdit = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
+  const visibleItems = selectedIds.length > 0
+    ? items.filter(x => selectedIds.includes(x.id))
+    : items
 
   const load = () => {
     setLoading(true)
@@ -66,6 +71,7 @@ export function OrganizationsPage() {
         await api.post('/organizations', body)
         toast('success', 'Организация создана')
       }
+      window.dispatchEvent(new Event('organizations:changed'))
       setModal(null)
       load()
     } catch {
@@ -82,6 +88,7 @@ export function OrganizationsPage() {
     try {
       await api.delete(`/organizations/${selected.id}`)
       toast('success', 'Организация удалена')
+      window.dispatchEvent(new Event('organizations:changed'))
       setModal(null)
       load()
     } catch {
@@ -95,15 +102,17 @@ export function OrganizationsPage() {
     <PageLayout title="Организации" actions={canEdit ? <button className="btn btn-primary" onClick={openCreate}>+ Добавить</button> : null}>
       {loading && <div className="tableLoading">Загрузка...</div>}
 
-      {!loading && items.length === 0 && (
+      {!loading && visibleItems.length === 0 && (
         <div className="tableWrap">
           <div className="tableEmpty">
-            Организаций нет. Организации — это юридические лица или подразделения внутри компании.
+            {items.length === 0
+              ? 'Организаций нет. Организации — это юридические лица или подразделения внутри компании.'
+              : 'Нет организаций, подходящих под текущий фильтр.'}
           </div>
         </div>
       )}
 
-      {!loading && items.length > 0 && (
+      {!loading && visibleItems.length > 0 && (
         <div className="tableWrap">
           <table className="crmTable">
             <thead>
@@ -115,7 +124,7 @@ export function OrganizationsPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map(org => (
+              {visibleItems.map(org => (
                 <tr key={org.id}>
                   <td>{org.name}</td>
                   <td>{org.address ?? '—'}</td>

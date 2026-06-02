@@ -5,19 +5,19 @@ import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations } from '../OrganizationContext'
 import { InvoiceDetailPanel } from '../components/InvoiceDetailPanel'
 import { InvoiceUpsertPanel } from '../components/InvoiceUpsertPanel'
 import type { Invoice } from '../components/InvoiceDetailPanel'
 import type { InvoiceFormState } from '../components/InvoiceUpsertPanel'
 import '../components/common.css'
 
-interface Company { id: string; name: string }
 interface Counterparty { id: string; name: string }
 interface Item { id: string; name: string; vatRate: string }
 
 interface ApiInvoice {
   id: string; number: string | null; date: string
-  companyId: string; counterpartyId: string; orderId: string | null
+  companyId: string; organizationId: string; counterpartyId: string; orderId: string | null
   status: string; totalNet: number; totalVat: number; totalGross: number
   paidAmount: number; comment: string | null
   lines: Array<{
@@ -34,8 +34,8 @@ const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0'
 
 export function InvoicesPage() {
   const { profile } = useAuth()
+  const { organizations, filterString } = useOrganizations()
   const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,7 +44,7 @@ export function InvoicesPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<InvoiceFormState>({
     number: '', date: new Date().toISOString().slice(0, 10),
-    companyId: '', counterpartyId: '', status: 'Draft', comment: '',
+    organizationId: '', counterpartyId: '', status: 'Draft', comment: '',
     lines: [emptyLine()]
   })
 
@@ -54,7 +54,7 @@ export function InvoicesPage() {
 
   const mapApiInvoice = (inv: ApiInvoice): Invoice => ({
     ...inv,
-    companyName: companies.find(c => c.id === inv.companyId)?.name,
+    organizationName: organizations.find(o => o.id === inv.organizationId)?.name,
     counterpartyName: counterparties.find(c => c.id === inv.counterpartyId)?.name,
     lines: inv.lines.map(l => ({ ...l, discountType: l.discountType ?? 'None', discountValue: l.discountValue ?? 0 }))
   })
@@ -66,30 +66,29 @@ export function InvoicesPage() {
 
   const load = () => {
     setLoading(true)
+    const path = filterString ? `/invoices?organizationIds=${encodeURIComponent(filterString)}` : '/invoices'
     Promise.all([
-      api.get<ApiInvoice[]>('/invoices'),
-      api.get<Company[]>('/companies'),
+      api.get<ApiInvoice[]>(path),
       api.get<Counterparty[]>('/counterparties'),
       api.get<Item[]>('/items')
-    ]).then(([inv, c, cp, it]) => {
-      setCompanies(c)
+    ]).then(([inv, cp, it]) => {
       setCounterparties(cp)
       setItems(it)
       setInvoices(inv.map(i => ({
         ...i,
-        companyName: c.find(x => x.id === i.companyId)?.name,
+        organizationName: organizations.find(o => o.id === i.organizationId)?.name,
         counterpartyName: cp.find(x => x.id === i.counterpartyId)?.name,
         lines: i.lines.map(l => ({ ...l, discountType: l.discountType ?? 'None', discountValue: l.discountValue ?? 0 }))
       })))
     }).catch(() => toast('error', 'Ошибка загрузки')).finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [filterString])
 
   const openCreate = () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для создания счёта'); return }
     setForm({
       number: '', date: new Date().toISOString().slice(0, 10),
-      companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '',
+      organizationId: organizations[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '',
       status: 'Draft', comment: '', lines: [emptyLine()]
     })
     setModal('create')
@@ -104,7 +103,7 @@ export function InvoicesPage() {
       setForm({
         number: full.number ?? '',
         date: full.date.slice(0, 10),
-        companyId: full.companyId,
+        organizationId: full.organizationId,
         counterpartyId: full.counterpartyId,
         status: full.status,
         comment: full.comment ?? '',
@@ -156,7 +155,7 @@ export function InvoicesPage() {
   const buildBody = () => ({
     number: form.number || null,
     date: form.date,
-    companyId: form.companyId,
+    organizationId: form.organizationId,
     counterpartyId: form.counterpartyId,
     orderId: null,
     status: form.status,
@@ -174,7 +173,7 @@ export function InvoicesPage() {
 
   const handleSave = async () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
-    if (!form.companyId || !form.counterpartyId) { toast('error', 'Выберите организацию и контрагента'); return }
+    if (!form.organizationId || !form.counterpartyId) { toast('error', 'Выберите организацию и контрагента'); return }
     if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
     setSaving(true)
     try {
@@ -245,7 +244,7 @@ export function InvoicesPage() {
           mode={modal}
           titleNumber={selected?.number}
           form={form}
-          companies={companies}
+          organizations={organizations}
           counterparties={counterparties}
           items={items}
           saving={saving}

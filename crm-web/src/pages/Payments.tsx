@@ -4,12 +4,12 @@ import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations } from '../OrganizationContext'
 import '../components/common.css'
 
-interface Company { id: string; name: string }
 interface Counterparty { id: string; name: string }
 interface Payment {
-  id: string; type: string; companyId: string; counterpartyId: string | null
+  id: string; type: string; companyId: string; organizationId: string; counterpartyId: string | null
   date: string; amount: number; paymentMethod: string; bankReference: string | null
   externalId: string | null; status: string
 }
@@ -21,12 +21,12 @@ const STATUS_LABELS: Record<string, string> = { Draft: 'Черновик', Poste
 const STATUS_BADGE: Record<string, string> = { Draft: 'badge-gray', Posted: 'badge-green', Cancelled: 'badge-red' }
 const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2 }) + ' ₽'
 
-const empty = () => ({ type: 'Incoming', companyId: '', counterpartyId: '', date: new Date().toISOString().slice(0, 10), amount: '', paymentMethod: 'Bank', bankReference: '', externalId: '', status: 'Draft' })
+const empty = () => ({ type: 'Incoming', organizationId: '', counterpartyId: '', date: new Date().toISOString().slice(0, 10), amount: '', paymentMethod: 'Bank', bankReference: '', externalId: '', status: 'Draft' })
 
 export function PaymentsPage() {
   const { profile } = useAuth()
+  const { organizations, filterString } = useOrganizations()
   const [payments, setPayments] = useState<Payment[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
@@ -40,21 +40,22 @@ export function PaymentsPage() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([api.get<Payment[]>('/payments'), api.get<Company[]>('/companies'), api.get<Counterparty[]>('/counterparties')])
-      .then(([p, c, cp]) => { setPayments(p); setCompanies(c); setCounterparties(cp) })
+    const path = filterString ? `/payments?organizationIds=${encodeURIComponent(filterString)}` : '/payments'
+    Promise.all([api.get<Payment[]>(path), api.get<Counterparty[]>('/counterparties')])
+      .then(([p, cp]) => { setPayments(p); setCounterparties(cp) })
       .catch(() => toast('error', 'Ошибка загрузки')).finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [filterString])
 
   const openCreate = () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для создания платежа'); return }
-    setForm({ ...empty(), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '' });
+    setForm({ ...empty(), organizationId: organizations[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '' });
     setModal('create')
   }
   const openEdit = (p: Payment) => {
     if (!canEdit) { toast('error', 'Недостаточно прав для редактирования платежа'); return }
     setSelected(p)
-    setForm({ type: p.type, companyId: p.companyId, counterpartyId: p.counterpartyId ?? '', date: p.date.slice(0, 10), amount: String(p.amount), paymentMethod: p.paymentMethod, bankReference: p.bankReference ?? '', externalId: p.externalId ?? '', status: p.status })
+    setForm({ type: p.type, organizationId: p.organizationId, counterpartyId: p.counterpartyId ?? '', date: p.date.slice(0, 10), amount: String(p.amount), paymentMethod: p.paymentMethod, bankReference: p.bankReference ?? '', externalId: p.externalId ?? '', status: p.status })
     setModal('edit')
   }
   const openDelete = (p: Payment) => {
@@ -67,7 +68,7 @@ export function PaymentsPage() {
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
   const buildBody = () => ({
-    type: form.type, companyId: form.companyId,
+    type: form.type, organizationId: form.organizationId,
     counterpartyId: form.counterpartyId || null,
     date: form.date, amount: Number(form.amount),
     paymentMethod: form.paymentMethod,
@@ -78,7 +79,7 @@ export function PaymentsPage() {
 
   const handleSave = async () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
-    if (!form.companyId) { toast('error', 'Выберите организацию'); return }
+    if (!form.organizationId) { toast('error', 'Выберите организацию'); return }
     if (!form.date) { toast('error', 'Выберите дату'); return }
     if (!form.amount) { toast('error', 'Введите сумму'); return }
     setSaving(true)
@@ -95,7 +96,7 @@ export function PaymentsPage() {
     catch (e: any) { toast('error', e.message ?? 'Ошибка') } finally { setSaving(false) }
   }
 
-  const companyName = (id: string) => companies.find(c => c.id === id)?.name ?? '—'
+  const orgName = (id: string) => organizations.find(o => o.id === id)?.name ?? '—'
   const cpName = (id: string | null) => id ? (counterparties.find(c => c.id === id)?.name ?? '—') : '—'
 
   return (
@@ -109,7 +110,7 @@ export function PaymentsPage() {
                 <tr key={p.id}>
                   <td>{p.date.slice(0, 10)}</td>
                   <td><span className={`badge ${TYPE_BADGE[p.type] ?? 'badge-gray'}`}>{TYPE_LABELS[p.type] ?? p.type}</span></td>
-                  <td>{companyName(p.companyId)}</td>
+                  <td>{orgName(p.organizationId)}</td>
                   <td>{cpName(p.counterpartyId)}</td>
                   <td>{METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}</td>
                   <td><strong>{fmt(p.amount)}</strong></td>
@@ -139,8 +140,8 @@ export function PaymentsPage() {
             <div className="formGroup"><label className="formLabel">Дата</label>
               <input className="formInput" type="date" value={form.date} onChange={f('date')} /></div>
             <div className="formGroup"><label className="formLabel">Организация *</label>
-              <select className="formSelect" value={form.companyId} onChange={f('companyId')}>
-                <option value="">— выберите —</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <select className="formSelect" value={form.organizationId} onChange={f('organizationId')}>
+                <option value="">— выберите —</option>{organizations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select></div>
             <div className="formGroup"><label className="formLabel">Контрагент</label>
               <select className="formSelect" value={form.counterpartyId} onChange={f('counterpartyId')}>

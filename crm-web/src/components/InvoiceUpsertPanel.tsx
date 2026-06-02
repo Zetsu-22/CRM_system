@@ -2,7 +2,7 @@ import { ChevronLeft, X, ShoppingCart } from 'lucide-react'
 import './OrderDetailPanel.css'
 import './common.css'
 
-interface Company { id: string; name: string }
+interface Organization { id: string; name: string }
 interface Counterparty { id: string; name: string }
 interface Item { id: string; name: string; vatRate: string }
 
@@ -19,7 +19,7 @@ export interface InvoiceLineForm {
 export interface InvoiceFormState {
   number: string
   date: string
-  companyId: string
+  organizationId: string
   counterpartyId: string
   status: string
   comment: string
@@ -54,7 +54,7 @@ interface InvoiceUpsertPanelProps {
   mode: 'create' | 'edit'
   titleNumber?: string | null
   form: InvoiceFormState
-  companies: Company[]
+  organizations: Organization[]
   counterparties: Counterparty[]
   items: Item[]
   saving: boolean
@@ -70,7 +70,7 @@ export function InvoiceUpsertPanel({
   mode,
   titleNumber,
   form,
-  companies,
+  organizations,
   counterparties,
   items,
   saving,
@@ -130,10 +130,10 @@ export function InvoiceUpsertPanel({
                 <div className="odp-field">
                   <div className="odp-field-label">Организация *</div>
                   <div className="odp-field-value">
-                    <select className="input" value={form.companyId}
-                      onChange={e => onChangeForm({ companyId: e.target.value })}>
+                    <select className="input" value={form.organizationId}
+                      onChange={e => onChangeForm({ organizationId: e.target.value })}>
                       <option value="">—</option>
-                      {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {organizations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                 </div>

@@ -5,9 +5,9 @@ import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations } from '../OrganizationContext'
 import '../components/common.css'
 
-interface Company { id: string; name: string }
 interface Counterparty { id: string; name: string }
 interface Item { id: string; name: string; vatRate: string }
 
@@ -17,7 +17,7 @@ interface UpdLine {
 }
 interface Upd {
   id: string; number: string | null; date: string
-  companyId: string; counterpartyId: string; orderId: string | null; invoiceId: string | null
+  companyId: string; organizationId: string; counterpartyId: string; orderId: string | null; invoiceId: string | null
   function: string; status: string; shippingDate: string | null
   totalNet: number; totalVat: number; totalGross: number
   comment: string | null; lines: UpdLine[]
@@ -32,8 +32,8 @@ const emptyLine = () => ({ itemId: '', nameSnapshot: '', vatRateSnapshot: 'Vat0'
 
 export function UpdsPage() {
   const { profile } = useAuth()
+  const { organizations, filterString } = useOrganizations()
   const [upds, setUpds] = useState<Upd[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,7 +42,7 @@ export function UpdsPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     number: '', date: new Date().toISOString().slice(0, 10),
-    companyId: '', counterpartyId: '', orderId: '', invoiceId: '',
+    organizationId: '', counterpartyId: '', orderId: '', invoiceId: '',
     function: 'ShippingAndInvoice', status: 'Draft', shippingDate: '', comment: '',
     lines: [emptyLine()]
   })
@@ -53,21 +53,22 @@ export function UpdsPage() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([api.get<Upd[]>('/upds'), api.get<Company[]>('/companies'), api.get<Counterparty[]>('/counterparties'), api.get<Item[]>('/items')])
-      .then(([u, c, cp, it]) => { setUpds(u); setCompanies(c); setCounterparties(cp); setItems(it) })
+    const path = filterString ? `/upds?organizationIds=${encodeURIComponent(filterString)}` : '/upds'
+    Promise.all([api.get<Upd[]>(path), api.get<Counterparty[]>('/counterparties'), api.get<Item[]>('/items')])
+      .then(([u, cp, it]) => { setUpds(u); setCounterparties(cp); setItems(it) })
       .catch(() => toast('error', 'Ошибка загрузки')).finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [filterString])
 
   const openCreate = () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для создания УПД'); return }
-    setForm({ number: '', date: new Date().toISOString().slice(0, 10), companyId: companies[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', orderId: '', invoiceId: '', function: 'ShippingAndInvoice', status: 'Draft', shippingDate: '', comment: '', lines: [emptyLine()] })
+    setForm({ number: '', date: new Date().toISOString().slice(0, 10), organizationId: organizations[0]?.id ?? '', counterpartyId: counterparties[0]?.id ?? '', orderId: '', invoiceId: '', function: 'ShippingAndInvoice', status: 'Draft', shippingDate: '', comment: '', lines: [emptyLine()] })
     setModal('create')
   }
   const openEdit = (u: Upd) => {
     if (!canEdit) { toast('error', 'Недостаточно прав для редактирования УПД'); return }
     setSelected(u)
-    setForm({ number: u.number ?? '', date: u.date.slice(0, 10), companyId: u.companyId, counterpartyId: u.counterpartyId, orderId: u.orderId ?? '', invoiceId: u.invoiceId ?? '', function: u.function, status: u.status, shippingDate: u.shippingDate?.slice(0, 10) ?? '', comment: u.comment ?? '', lines: u.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: 'None', discountValue: 0, warehouseId: null })) })
+    setForm({ number: u.number ?? '', date: u.date.slice(0, 10), organizationId: u.organizationId, counterpartyId: u.counterpartyId, orderId: u.orderId ?? '', invoiceId: u.invoiceId ?? '', function: u.function, status: u.status, shippingDate: u.shippingDate?.slice(0, 10) ?? '', comment: u.comment ?? '', lines: u.lines.map(l => ({ itemId: l.itemId, nameSnapshot: l.nameSnapshot, vatRateSnapshot: l.vatRateSnapshot, qty: l.qty, unitPrice: l.unitPrice, discountType: 'None', discountValue: 0, warehouseId: null })) })
     setModal('edit')
   }
   const openView = (u: Upd) => { setSelected(u); setModal('view') }
@@ -81,7 +82,7 @@ export function UpdsPage() {
   })
 
   const buildBody = () => ({
-    number: form.number || null, date: form.date, companyId: form.companyId, counterpartyId: form.counterpartyId,
+    number: form.number || null, date: form.date, organizationId: form.organizationId, counterpartyId: form.counterpartyId,
     orderId: form.orderId || null, invoiceId: form.invoiceId || null,
     function: form.function, status: form.status, shippingDate: form.shippingDate || null,
     comment: form.comment || null,
@@ -90,7 +91,7 @@ export function UpdsPage() {
 
   const handleSave = async () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для сохранения'); return }
-    if (!form.companyId || !form.counterpartyId) { toast('error', 'Выберите организацию и контрагента'); return }
+    if (!form.organizationId || !form.counterpartyId) { toast('error', 'Выберите организацию и контрагента'); return }
     if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
     setSaving(true)
     try {
@@ -143,8 +144,8 @@ export function UpdsPage() {
             <div className="formGroup"><label className="formLabel">Номер</label><input className="formInput" value={form.number} onChange={e => setForm(p => ({ ...p, number: e.target.value }))} placeholder="Авто" /></div>
             <div className="formGroup"><label className="formLabel">Дата *</label><input className="formInput" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
             <div className="formGroup"><label className="formLabel">Организация *</label>
-              <select className="formSelect" value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
-                <option value="">— выберите —</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <select className="formSelect" value={form.organizationId} onChange={e => setForm(p => ({ ...p, organizationId: e.target.value }))}>
+                <option value="">— выберите —</option>{organizations.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select></div>
             <div className="formGroup"><label className="formLabel">Контрагент *</label>
               <select className="formSelect" value={form.counterpartyId} onChange={e => setForm(p => ({ ...p, counterpartyId: e.target.value }))}>

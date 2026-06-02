@@ -5,10 +5,12 @@ import { Modal } from '../components/Modal'
 import { toast } from '../components/Toast'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
+import { useOrganizations } from '../OrganizationContext'
 import '../components/common.css'
 
 interface Counterparty {
   id: string
+  organizationId: string
   name: string
   fullName: string | null
   type: string
@@ -19,7 +21,10 @@ interface Counterparty {
   paymentTermsDays: number | null
 }
 
-const empty = () => ({ name: '', fullName: '', type: 'Customer', status: 'Active', inn: '', kpp: '', ogrn: '', paymentTermsDays: '' as string | number })
+const empty = (orgId: string) => ({
+  organizationId: orgId,
+  name: '', fullName: '', type: 'Customer', status: 'Active', inn: '', kpp: '', ogrn: '', paymentTermsDays: '' as string | number,
+})
 
 const typeLabel: Record<string, string> = { Customer: 'Покупатель', Supplier: 'Поставщик', Both: 'Оба' }
 const statusBadge = (s: string) => s === 'Active' ? 'badge-green' : 'badge-red'
@@ -27,11 +32,12 @@ const statusLabel: Record<string, string> = { Active: 'Активен', Blocked:
 
 export function CounterpartiesPage() {
   const { profile } = useAuth()
+  const { currentOrganization, filterString } = useOrganizations()
   const [items, setItems] = useState<Counterparty[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null)
   const [selected, setSelected] = useState<Counterparty | null>(null)
-  const [form, setForm] = useState(empty())
+  const [form, setForm] = useState(empty(''))
   const [saving, setSaving] = useState(false)
 
   const hasFullAccess = !!(profile?.isCompanyOwner || profile?.isBasicProfile)
@@ -40,23 +46,28 @@ export function CounterpartiesPage() {
 
   const load = () => {
     setLoading(true)
-    api.get<Counterparty[]>('/counterparties')
+    const qs = filterString ? `?organizationIds=${filterString}` : ''
+    api.get<Counterparty[]>(`/counterparties${qs}`)
       .then(setItems)
       .catch(() => toast('error', 'Не удалось загрузить контрагентов'))
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [filterString]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreate = () => {
     if (!canEdit) { toast('error', 'Недостаточно прав для создания'); return }
-    setForm(empty()); setModal('create')
+    if (!currentOrganization) { toast('error', 'Выберите организацию в шапке'); return }
+    setForm(empty(currentOrganization.id)); setModal('create')
   }
   const openEdit = (c: Counterparty) => {
     if (!canEdit) { toast('error', 'Недостаточно прав для редактирования'); return }
     setSelected(c)
-    setForm({ name: c.name, fullName: c.fullName ?? '', type: c.type, status: c.status,
+    setForm({
+      organizationId: c.organizationId,
+      name: c.name, fullName: c.fullName ?? '', type: c.type, status: c.status,
       inn: c.inn ?? '', kpp: c.kpp ?? '', ogrn: c.ogrn ?? '',
-      paymentTermsDays: c.paymentTermsDays ?? '' })
+      paymentTermsDays: c.paymentTermsDays ?? '',
+    })
     setModal('edit')
   }
   const openDelete = (c: Counterparty) => {
