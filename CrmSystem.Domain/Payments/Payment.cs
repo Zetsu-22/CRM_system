@@ -5,6 +5,10 @@ public sealed class Payment : AuditableEntity, ITenantOwned
     public PaymentType Type { get; set; }
 
     public Guid CompanyId { get; set; }
+
+    public Guid OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+
     public Guid? CounterpartyId { get; set; }
 
     public DateOnly Date { get; set; }

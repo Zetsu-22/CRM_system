@@ -1,109 +1,52 @@
-using CrmSystem.Api.Services;
-using CrmSystem.Domain;
-using CrmSystem.Persistence;
+using CrmSystem.Api.Infrastructure;
+using CrmSystem.Application.Common;
+using CrmSystem.Application.Counterparties;
+using CrmSystem.Application.Counterparties.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/counterparties")]
 [Authorize]
-public sealed class CounterpartiesController(CrmDbContext db, CurrentUserService cu) : ControllerBase
+public sealed class CounterpartiesController(ICounterpartiesService counterparties) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? organizationIds,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDirection,
+        CancellationToken ct)
     {
-        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
-        if (!cu.IsAccessContractors) return Forbid();
-        var cid = cu.CompanyId;
-        var list = await db.Counterparties
-            .Where(x => x.CompanyId == cid)
-            .Include(x => x.Addresses)
-            .Include(x => x.Contacts)
-            .OrderBy(x => x.Name)
-            .ToListAsync(ct);
-        return Ok(list);
+        var parsed = OrgIdParser.Parse(organizationIds);
+        if (page.HasValue)
+        {
+            var req = new PageRequest(page.Value, pageSize ?? 20, sortBy, sortDirection ?? "asc");
+            return (await counterparties.GetPagedAsync(req, parsed, ct)).ToActionResult(this);
+        }
+        return (await counterparties.GetAllAsync(parsed, ct)).ToActionResult(this);
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
-    {
-        if (cu.CompanyId is null) return NotFound();
-        if (!cu.IsAccessContractors) return Forbid();
-        var item = await db.Counterparties
-            .Include(x => x.Addresses)
-            .Include(x => x.Contacts)
-            .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        return item is null ? NotFound() : Ok(item);
-    }
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct) =>
+        (await counterparties.GetByIdAsync(id, ct)).ToActionResult(this);
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CounterpartyDto dto, CancellationToken ct)
-    {
-        if (!cu.IsAccessContractorsEdit) return Forbid();
-        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
-        var entity = new Counterparty
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = cu.CompanyId.Value,
-            Name = dto.Name,
-            FullName = dto.FullName,
-            Type = dto.Type,
-            Status = dto.Status,
-            Inn = dto.Inn,
-            Kpp = dto.Kpp,
-            Ogrn = dto.Ogrn,
-            PaymentTermsDays = dto.PaymentTermsDays,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
-        db.Counterparties.Add(entity);
-        await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
-    }
+    public async Task<IActionResult> Create([FromBody] CounterpartyDto dto, CancellationToken ct) =>
+        (await counterparties.CreateAsync(dto, ct))
+            .ToActionResult(this, value => CreatedAtAction(nameof(GetById), new { id = value.Id }, value));
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] CounterpartyDto dto, CancellationToken ct)
-    {
-        if (!cu.IsAccessContractorsEdit) return Forbid();
-        var entity = await db.Counterparties.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        if (entity is null) return NotFound();
-
-        entity.Name = dto.Name;
-        entity.FullName = dto.FullName;
-        entity.Type = dto.Type;
-        entity.Status = dto.Status;
-        entity.Inn = dto.Inn;
-        entity.Kpp = dto.Kpp;
-        entity.Ogrn = dto.Ogrn;
-        entity.PaymentTermsDays = dto.PaymentTermsDays;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await db.SaveChangesAsync(ct);
-        return Ok(entity);
-    }
+    public async Task<IActionResult> Update(Guid id, [FromBody] CounterpartyDto dto, CancellationToken ct) =>
+        (await counterparties.UpdateAsync(id, dto, ct)).ToActionResult(this);
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        if (!cu.IsAccessContractorsEdit) return Forbid();
-        var entity = await db.Counterparties.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        if (entity is null) return NotFound();
-        entity.IsDeleted = true;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return NoContent();
+        var result = await counterparties.DeleteAsync(id, ct);
+        return result.IsSuccess ? NoContent() : result.ToActionResult(this);
     }
 }
-
-public sealed record CounterpartyDto(
-    string Name,
-    string? FullName,
-    CounterpartyType Type,
-    CounterpartyStatus Status,
-    string? Inn,
-    string? Kpp,
-    string? Ogrn,
-    int? PaymentTermsDays);

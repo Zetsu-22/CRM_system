@@ -1,3 +1,4 @@
+#if DEBUG
 using CrmSystem.Api.Services;
 using CrmSystem.Domain;
 using CrmSystem.Persistence;
@@ -10,7 +11,7 @@ namespace CrmSystem.Api.Controllers;
 [ApiController]
 [Route("api/v1/dev")]
 [Authorize]
-public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) : ControllerBase
+public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env, CurrentUserService cu) : ControllerBase
 {
     [HttpPost("seed-test-company")]
     public async Task<IActionResult> SeedTestCompany([FromBody] SeedTestCompanyDto dto, CancellationToken ct)
@@ -21,7 +22,10 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
 
         var now = DateTimeOffset.UtcNow;
 
-        var company = await db.Companies.FirstOrDefaultAsync(x => x.Name == companyName, ct);
+        // Prefer current user's company to avoid cross-tenant conflicts with the TenantSaveChangesInterceptor.
+        Company? company = cu.CompanyId.HasValue
+            ? await db.Companies.FirstOrDefaultAsync(x => x.Id == cu.CompanyId.Value, ct)
+            : await db.Companies.FirstOrDefaultAsync(x => x.Name == companyName, ct);
         if (company is null)
         {
             company = new Company
@@ -51,15 +55,11 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
         var org1 = await EnsureOrganization(companyId, "Основная организация", true, now, ct);
         _ = await EnsureOrganization(companyId, "Филиал 1", false, now, ct);
 
-        var wh = await EnsureWarehouse(companyId, "Основной склад", true, now, ct);
+        var customer = await EnsureCounterparty(companyId, org1.Id, "ООО Покупатель", CounterpartyType.Customer, now, ct);
+        var supplier = await EnsureCounterparty(companyId, org1.Id, "ООО Поставщик", CounterpartyType.Supplier, now, ct);
+        var both = await EnsureCounterparty(companyId, org1.Id, "ИП Партнёр", CounterpartyType.Both, now, ct);
 
-        var customer = await EnsureCounterparty(companyId, "ООО Покупатель", CounterpartyType.Customer, now, ct);
-        var supplier = await EnsureCounterparty(companyId, "ООО Поставщик", CounterpartyType.Supplier, now, ct);
-        var both = await EnsureCounterparty(companyId, "ИП Партнёр", CounterpartyType.Both, now, ct);
-
-        var items = await EnsureItems(companyId, now, ct);
-
-        await EnsureStockBalances(wh.Id, items.Where(i => i.IsStockItem).Take(5).ToList(), now, ct);
+        var items = await EnsureItems(companyId, org1.Id, now, ct);
 
         var createdOrders = new List<SalesOrder>();
 
@@ -72,6 +72,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             {
                 Id = Guid.NewGuid(),
                 CompanyId = companyId,
+                OrganizationId = org1.Id,
                 CounterpartyId = customer.Id,
                 Number = number,
                 Date = DateOnly.FromDateTime(DateTime.UtcNow),
@@ -83,9 +84,9 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             };
 
             var lineItems = items.Take(3).ToArray();
-            order.Lines.Add(BuildOrderLine(order.Id, wh.Id, lineItems[0], 2, 1500m, now));
-            order.Lines.Add(BuildOrderLine(order.Id, wh.Id, lineItems[1], 1, 4990m, now));
-            order.Lines.Add(BuildOrderLine(order.Id, null, lineItems[2], 3, 500m, now));
+            order.Lines.Add(BuildOrderLine(order.Id, lineItems[0], 2, 1500m, now));
+            order.Lines.Add(BuildOrderLine(order.Id, lineItems[1], 1, 4990m, now));
+            order.Lines.Add(BuildOrderLine(order.Id, lineItems[2], 3, 500m, now));
 
             RecalcOrderTotals(order);
 
@@ -109,6 +110,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             {
                 Id = Guid.NewGuid(),
                 CompanyId = companyId,
+                OrganizationId = org1.Id,
                 CounterpartyId = customer.Id,
                 OrderId = order.Id,
                 Number = number,
@@ -144,6 +146,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
                 {
                     Id = Guid.NewGuid(),
                     CompanyId = companyId,
+                    OrganizationId = org1.Id,
                     CounterpartyId = customer.Id,
                     OrderId = order.Id,
                     InvoiceId = invoice.Id,
@@ -158,8 +161,8 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
                     IsDeleted = false,
                 };
 
-                upd.Lines.Add(BuildUpdLine(upd.Id, wh.Id, items[0], 1, 1500m, now));
-                upd.Lines.Add(BuildUpdLine(upd.Id, wh.Id, items[1], 1, 4990m, now));
+                upd.Lines.Add(BuildUpdLine(upd.Id, items[0], 1, 1500m, now));
+                upd.Lines.Add(BuildUpdLine(upd.Id, items[1], 1, 4990m, now));
 
                 RecalcUpdTotals(upd);
 
@@ -170,10 +173,12 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
 
         for (var i = 1; i <= 2; i++)
         {
-            var exists = await db.Payments.AnyAsync(x => x.CompanyId == companyId && x.ExternalId == $"TST-PAY-{DateTime.UtcNow:yyyyMMdd}-{i:000}", ct);
+            var externalId = $"TST-PAY-{DateTime.UtcNow:yyyyMMdd}-{i:000}";
+            var exists = await db.Payments.AnyAsync(x => x.CompanyId == companyId && x.ExternalId == externalId, ct);
             if (exists) continue;
 
-            var invoice = createdInvoices.ElementAtOrDefault(i - 1) ?? createdInvoices.FirstOrDefault();
+            var invoice = createdInvoices.ElementAtOrDefault(i - 1)
+                ?? await db.Invoices.Where(x => x.CompanyId == companyId).OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(ct);
             if (invoice is null) break;
 
             var payAmount = i == 1 ? invoice.TotalGross / 2m : invoice.TotalGross;
@@ -182,13 +187,14 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             {
                 Id = Guid.NewGuid(),
                 CompanyId = companyId,
+                OrganizationId = org1.Id,
                 CounterpartyId = customer.Id,
                 Date = DateOnly.FromDateTime(DateTime.UtcNow),
                 Type = PaymentType.Incoming,
                 PaymentMethod = PaymentMethod.Bank,
                 Status = PaymentStatus.Posted,
                 Amount = payAmount,
-                ExternalId = $"TST-PAY-{DateTime.UtcNow:yyyyMMdd}-{i:000}",
+                ExternalId = externalId,
                 BankReference = "TEST-BANK-REF",
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -251,28 +257,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
         return org;
     }
 
-    private async Task<Warehouse> EnsureWarehouse(Guid companyId, string name, bool isDefault, DateTimeOffset now, CancellationToken ct)
-    {
-        var wh = await db.Warehouses.FirstOrDefaultAsync(x => x.CompanyId == companyId && x.Name == name, ct);
-        if (wh is not null) return wh;
-
-        wh = new Warehouse
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = companyId,
-            Name = name,
-            IsDefault = isDefault,
-            Address = "Тестовый склад",
-            CreatedAt = now,
-            UpdatedAt = now,
-            IsDeleted = false,
-        };
-        db.Warehouses.Add(wh);
-        await db.SaveChangesAsync(ct);
-        return wh;
-    }
-
-    private async Task<Counterparty> EnsureCounterparty(Guid companyId, string name, CounterpartyType type, DateTimeOffset now, CancellationToken ct)
+    private async Task<Counterparty> EnsureCounterparty(Guid companyId, Guid organizationId, string name, CounterpartyType type, DateTimeOffset now, CancellationToken ct)
     {
         var cp = await db.Counterparties.FirstOrDefaultAsync(x => x.CompanyId == companyId && x.Name == name, ct);
         if (cp is not null) return cp;
@@ -281,6 +266,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
         {
             Id = Guid.NewGuid(),
             CompanyId = companyId,
+            OrganizationId = organizationId,
             Name = name,
             Type = type,
             Status = CounterpartyStatus.Active,
@@ -316,7 +302,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
         return cp;
     }
 
-    private async Task<List<Item>> EnsureItems(Guid companyId, DateTimeOffset now, CancellationToken ct)
+    private async Task<List<Item>> EnsureItems(Guid companyId, Guid organizationId, DateTimeOffset now, CancellationToken ct)
     {
         var existing = await db.Items.Where(x => x.CompanyId == companyId && x.Sku.StartsWith("TEST-")).OrderBy(x => x.Sku).ToListAsync(ct);
         if (existing.Count >= 10) return existing;
@@ -336,12 +322,12 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             {
                 Id = Guid.NewGuid(),
                 CompanyId = companyId,
+                OrganizationId = organizationId,
                 Type = i % 4 == 0 ? ItemType.Service : ItemType.Product,
                 Sku = sku,
                 Name = i % 4 == 0 ? $"Услуга {i}" : $"Товар {i}",
                 Unit = i % 4 == 0 ? "усл" : "шт",
                 VatRate = VatRate.Vat22,
-                IsStockItem = i % 4 != 0,
                 CreatedAt = now,
                 UpdatedAt = now,
                 IsDeleted = false,
@@ -354,30 +340,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
         return list;
     }
 
-    private async Task EnsureStockBalances(Guid warehouseId, List<Item> items, DateTimeOffset now, CancellationToken ct)
-    {
-        foreach (var it in items)
-        {
-            var exists = await db.StockBalances.AnyAsync(x => x.WarehouseId == warehouseId && x.ItemId == it.Id, ct);
-            if (exists) continue;
-
-            db.StockBalances.Add(new StockBalance
-            {
-                Id = Guid.NewGuid(),
-                WarehouseId = warehouseId,
-                ItemId = it.Id,
-                QtyOnHand = 100,
-                QtyReserved = 0,
-                CreatedAt = now,
-                UpdatedAt = now,
-                IsDeleted = false,
-            });
-        }
-
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static SalesOrderLine BuildOrderLine(Guid orderId, Guid? warehouseId, Item item, decimal qty, decimal unitPrice, DateTimeOffset now)
+    private static SalesOrderLine BuildOrderLine(Guid orderId, Item item, decimal qty, decimal unitPrice, DateTimeOffset now)
     {
         var net = qty * unitPrice;
         var vat = net * 0.22m;
@@ -388,7 +351,6 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             Id = Guid.NewGuid(),
             OrderId = orderId,
             ItemId = item.Id,
-            WarehouseId = warehouseId,
             NameSnapshot = item.Name,
             VatRateSnapshot = item.VatRate,
             Qty = qty,
@@ -445,7 +407,7 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
         invoice.PaidAmount = invoice.PaidAmount;
     }
 
-    private static UpdLine BuildUpdLine(Guid updId, Guid? warehouseId, Item item, decimal qty, decimal unitPrice, DateTimeOffset now)
+    private static UpdLine BuildUpdLine(Guid updId, Item item, decimal qty, decimal unitPrice, DateTimeOffset now)
     {
         var net = qty * unitPrice;
         var vat = net * 0.22m;
@@ -456,7 +418,6 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
             Id = Guid.NewGuid(),
             UpdId = updId,
             ItemId = item.Id,
-            WarehouseId = warehouseId,
             NameSnapshot = item.Name,
             VatRateSnapshot = item.VatRate,
             Qty = qty,
@@ -481,3 +442,4 @@ public sealed class DevSeedController(CrmDbContext db, IWebHostEnvironment env) 
 }
 
 public sealed record SeedTestCompanyDto(string? CompanyName, bool Force);
+#endif

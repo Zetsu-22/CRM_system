@@ -30,6 +30,7 @@ public static class ResultExtensions
         ErrorCodes.InvalidTransition   => ctrl.Conflict(new { error = new { code = error.Code, message = error.Message } }),
         ErrorCodes.ConcurrencyConflict => ctrl.Conflict(new { error = new { code = error.Code, message = error.Message, details = error.Details } }),
         ErrorCodes.Conflict            => ctrl.Conflict(new { error = new { code = error.Code, message = error.Message, details = error.Details } }),
-        _                              => ctrl.BadRequest(new { error = error.Message }),
+        // Phase 4.5 — бизнес-правила (неизвестный код → 409 с code+message)
+        _                              => ctrl.Conflict(new { error = new { code = error.Code, message = error.Message } }),
     };
 }

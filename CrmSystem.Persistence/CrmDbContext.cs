@@ -11,13 +11,10 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
     public DbSet<CounterpartyAddress> CounterpartyAddresses => Set<CounterpartyAddress>();
     public DbSet<CounterpartyContact> CounterpartyContacts => Set<CounterpartyContact>();
     public DbSet<Item> Items => Set<Item>();
-    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
-
-    public DbSet<StockBalance> StockBalances => Set<StockBalance>();
-    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
     public DbSet<SalesOrder> Orders => Set<SalesOrder>();
     public DbSet<SalesOrderLine> OrderLines => Set<SalesOrderLine>();
+    public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
@@ -35,8 +32,6 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
         ConfigureCompany(modelBuilder);
         ConfigureCounterparty(modelBuilder);
         ConfigureItem(modelBuilder);
-        ConfigureWarehouse(modelBuilder);
-        ConfigureStock(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureInvoices(modelBuilder);
         ConfigureUpds(modelBuilder);
@@ -86,8 +81,13 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasKey(x => x.Id);
             b.Property(x => x.Name).HasMaxLength(256);
             b.HasIndex(x => x.CompanyId);
+            b.HasIndex(x => x.OrganizationId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
+
+            b.HasOne(x => x.Organization)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId);
         });
 
         modelBuilder.Entity<CounterpartyAddress>(b =>
@@ -124,53 +124,15 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.Property(x => x.Sku).HasMaxLength(64);
             b.Property(x => x.Name).HasMaxLength(256);
             b.Property(x => x.Unit).HasMaxLength(32);
-            b.HasIndex(x => new { x.CompanyId, x.Sku }).IsUnique();
+            b.HasIndex(x => new { x.OrganizationId, x.Sku }).IsUnique();
             b.HasIndex(x => x.CompanyId);
-            ConfigureXminConcurrency(b);
-            b.HasQueryFilter(x => !x.IsDeleted);
-        });
-    }
-
-    private static void ConfigureWarehouse(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Warehouse>(b =>
-        {
-            b.ToTable("warehouses");
-            b.HasKey(x => x.Id);
-            b.Property(x => x.Name).HasMaxLength(256);
-            b.HasIndex(x => x.CompanyId);
-            ConfigureXminConcurrency(b);
-            b.HasQueryFilter(x => !x.IsDeleted);
-        });
-    }
-
-    private static void ConfigureStock(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<StockBalance>(b =>
-        {
-            b.ToTable("stock_balances");
-            b.HasKey(x => x.Id);
-            b.HasIndex(x => new { x.WarehouseId, x.ItemId }).IsUnique();
+            b.HasIndex(x => x.OrganizationId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
 
-            b.HasOne(x => x.Warehouse)
+            b.HasOne(x => x.Organization)
                 .WithMany()
-                .HasForeignKey(x => x.WarehouseId);
-
-            b.HasOne(x => x.Item)
-                .WithMany()
-                .HasForeignKey(x => x.ItemId);
-        });
-
-        modelBuilder.Entity<StockMovement>(b =>
-        {
-            b.ToTable("stock_movements");
-            b.HasKey(x => x.Id);
-            b.HasIndex(x => x.Date);
-            b.HasIndex(x => new { x.SourceType, x.SourceId });
-            ConfigureXminConcurrency(b);
-            b.HasQueryFilter(x => !x.IsDeleted);
+                .HasForeignKey(x => x.OrganizationId);
         });
     }
 
@@ -182,12 +144,17 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasKey(x => x.Id);
             b.Property(x => x.Number).HasMaxLength(32);
             b.HasIndex(x => x.Number);
+            b.HasIndex(x => x.OrganizationId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
 
             b.HasOne(x => x.Company)
                 .WithMany()
                 .HasForeignKey(x => x.CompanyId);
+
+            b.HasOne(x => x.Organization)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId);
 
             b.HasOne(x => x.Counterparty)
                 .WithMany()
@@ -209,10 +176,20 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasOne(x => x.Item)
                 .WithMany()
                 .HasForeignKey(x => x.ItemId);
+        });
 
-            b.HasOne(x => x.Warehouse)
-                .WithMany()
-                .HasForeignKey(x => x.WarehouseId);
+        modelBuilder.Entity<OrderStatusHistory>(b =>
+        {
+            b.ToTable("order_status_history");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Comment).HasMaxLength(512);
+            b.HasIndex(x => x.OrderId);
+            b.Ignore(x => x.RowVersion);
+            b.HasQueryFilter(x => !x.IsDeleted);
+
+            b.HasOne(x => x.Order)
+                .WithMany(x => x.StatusHistory)
+                .HasForeignKey(x => x.OrderId);
         });
     }
 
@@ -224,8 +201,13 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasKey(x => x.Id);
             b.Property(x => x.Number).HasMaxLength(32);
             b.HasIndex(x => x.Number);
+            b.HasIndex(x => x.OrganizationId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
+
+            b.HasOne(x => x.Organization)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId);
         });
 
         modelBuilder.Entity<InvoiceLine>(b =>
@@ -250,8 +232,13 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
             b.HasKey(x => x.Id);
             b.Property(x => x.Number).HasMaxLength(32);
             b.HasIndex(x => x.Number);
+            b.HasIndex(x => x.OrganizationId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
+
+            b.HasOne(x => x.Organization)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId);
         });
 
         modelBuilder.Entity<UpdLine>(b =>
@@ -274,8 +261,13 @@ public sealed class CrmDbContext(DbContextOptions<CrmDbContext> options) : DbCon
         {
             b.ToTable("payments");
             b.HasKey(x => x.Id);
+            b.HasIndex(x => x.OrganizationId);
             ConfigureXminConcurrency(b);
             b.HasQueryFilter(x => !x.IsDeleted);
+
+            b.HasOne(x => x.Organization)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId);
         });
 
         modelBuilder.Entity<PaymentAllocation>(b =>

@@ -1,4 +1,4 @@
-using CrmSystem.Api.Controllers;
+using CrmSystem.Application.Counterparties.Dtos;
 using FluentValidation;
 
 namespace CrmSystem.Api.Validators;
@@ -7,6 +7,7 @@ public sealed class CounterpartyDtoValidator : AbstractValidator<CounterpartyDto
 {
     public CounterpartyDtoValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty();
         RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
         RuleFor(x => x.FullName).MaximumLength(512);
         RuleFor(x => x.Inn).Matches(@"^\d{10}$|^\d{12}$").When(x => !string.IsNullOrWhiteSpace(x.Inn))

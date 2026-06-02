@@ -1,102 +1,52 @@
-using CrmSystem.Api.Services;
-using CrmSystem.Domain;
-using CrmSystem.Persistence;
+using CrmSystem.Api.Infrastructure;
+using CrmSystem.Application.Common;
+using CrmSystem.Application.Items;
+using CrmSystem.Application.Items.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace CrmSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/items")]
 [Authorize]
-public sealed class ItemsController(CrmDbContext db, CurrentUserService cu) : ControllerBase
+public sealed class ItemsController(IItemsService items) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? organizationIds,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDirection,
+        CancellationToken ct)
     {
-        if (cu.CompanyId is null) return Ok(Array.Empty<object>());
-        if (!cu.IsAccessNomenclature) return Forbid();
-        var list = await db.Items
-            .Where(x => x.CompanyId == cu.CompanyId)
-            .OrderBy(x => x.Name)
-            .ToListAsync(ct);
-        return Ok(list);
+        var parsed = OrgIdParser.Parse(organizationIds);
+        if (page.HasValue)
+        {
+            var req = new PageRequest(page.Value, pageSize ?? 20, sortBy, sortDirection ?? "asc");
+            return (await items.GetPagedAsync(req, parsed, ct)).ToActionResult(this);
+        }
+        return (await items.GetAllAsync(parsed, ct)).ToActionResult(this);
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
-    {
-        if (cu.CompanyId is null) return NotFound();
-        if (!cu.IsAccessNomenclature) return Forbid();
-        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        return item is null ? NotFound() : Ok(item);
-    }
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct) =>
+        (await items.GetByIdAsync(id, ct)).ToActionResult(this);
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] ItemDto dto, CancellationToken ct)
-    {
-        if (!cu.IsAccessNomenclatureEdit) return Forbid();
-        if (cu.CompanyId is null) return BadRequest(new { error = "Пользователь не привязан к компании" });
-        var entity = new Item
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = cu.CompanyId.Value,
-            Type = dto.Type,
-            Sku = dto.Sku?.Trim() is { Length: > 0 } s ? s : "ITEM-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
-            Barcode = dto.Barcode,
-            Name = dto.Name,
-            Description = dto.Description,
-            Unit = dto.Unit,
-            VatRate = dto.VatRate,
-            IsStockItem = dto.IsStockItem,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
-        db.Items.Add(entity);
-        await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, entity);
-    }
+    public async Task<IActionResult> Create([FromBody] ItemDto dto, CancellationToken ct) =>
+        (await items.CreateAsync(dto, ct))
+            .ToActionResult(this, value => CreatedAtAction(nameof(GetById), new { id = value.Id }, value));
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] ItemDto dto, CancellationToken ct)
-    {
-        if (!cu.IsAccessNomenclatureEdit) return Forbid();
-        var entity = await db.Items.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        if (entity is null) return NotFound();
-
-        entity.Type = dto.Type;
-        entity.Barcode = dto.Barcode;
-        entity.Name = dto.Name;
-        entity.Description = dto.Description;
-        entity.Unit = dto.Unit;
-        entity.VatRate = dto.VatRate;
-        entity.IsStockItem = dto.IsStockItem;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await db.SaveChangesAsync(ct);
-        return Ok(entity);
-    }
+    public async Task<IActionResult> Update(Guid id, [FromBody] ItemDto dto, CancellationToken ct) =>
+        (await items.UpdateAsync(id, dto, ct)).ToActionResult(this);
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        if (!cu.IsAccessNomenclatureEdit) return Forbid();
-        var entity = await db.Items.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
-        if (entity is null) return NotFound();
-        entity.IsDeleted = true;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return NoContent();
+        var result = await items.DeleteAsync(id, ct);
+        return result.IsSuccess ? NoContent() : result.ToActionResult(this);
     }
 }
-
-public sealed record ItemDto(
-    ItemType Type,
-    string? Sku,
-    string? Barcode,
-    string Name,
-    string? Description,
-    string Unit,
-    VatRate VatRate,
-    bool IsStockItem);

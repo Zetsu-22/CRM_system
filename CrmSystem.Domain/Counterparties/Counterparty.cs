@@ -4,6 +4,9 @@ public sealed class Counterparty : AuditableEntity, ITenantOwned
 {
     public Guid CompanyId { get; set; }
 
+    public Guid OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+
     public CounterpartyType Type { get; set; }
     public CounterpartyStatus Status { get; set; }
 

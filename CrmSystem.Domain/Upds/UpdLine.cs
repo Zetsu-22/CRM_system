@@ -20,5 +20,4 @@ public sealed class UpdLine : AuditableEntity
     public decimal Vat { get; set; }
     public decimal Gross { get; set; }
 
-    public Guid? WarehouseId { get; set; }
 }
