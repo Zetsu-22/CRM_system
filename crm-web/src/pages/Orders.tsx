@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { validateForm, OrderFormSchema } from '../api/formSchemas'
 import { Trash2 } from 'lucide-react'
 import { PageLayout } from '../components/PageLayout'
 import { Modal } from '../components/Modal'
@@ -262,9 +263,7 @@ export function OrdersPage() {
 
   const handleSave = async () => {
     if (!canEditOrders) { toast('error', 'Недостаточно прав для сохранения'); return }
-    if (!form.organizationId) { toast('error', 'Выберите организацию'); return }
-    if (!form.counterpartyId) { toast('error', 'Выберите контрагента'); return }
-    if (form.lines.some(l => !l.itemId)) { toast('error', 'Выберите товар во всех строках'); return }
+    if (!validateForm(OrderFormSchema, form, msg => toast('error', msg))) return
     try {
       if (modal === 'create') {
         await createOrder.mutateAsync(buildBody())
