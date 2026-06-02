@@ -5,6 +5,7 @@ namespace CrmSystem.Application.Orders.Dtos;
 public sealed record SalesOrderDto(
     string? Number,
     DateOnly Date,
+    Guid OrganizationId,
     Guid CounterpartyId,
     string? Comment,
     Guid? PickerId,
@@ -22,8 +23,7 @@ public sealed record SalesOrderLineDto(
     decimal Qty,
     decimal UnitPrice,
     DiscountType DiscountType,
-    decimal DiscountValue,
-    Guid? WarehouseId);
+    decimal DiscountValue);
 
 public sealed record OrderLineResponse(
     Guid Id,
@@ -37,9 +37,7 @@ public sealed record OrderLineResponse(
     decimal DiscountValue,
     decimal Net,
     decimal Vat,
-    decimal Gross,
-    Guid? WarehouseId,
-    decimal AvailableQty);
+    decimal Gross);
 
 public sealed record OrderResponse(
     Guid Id,
@@ -47,6 +45,8 @@ public sealed record OrderResponse(
     DateOnly Date,
     Guid CompanyId,
     string? CompanyName,
+    Guid OrganizationId,
+    string? OrganizationName,
     Guid CounterpartyId,
     string? CounterpartyName,
     OrderStatus Status,
@@ -63,11 +63,43 @@ public sealed record OrderResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     List<OrderLineResponse> Lines,
-    uint RowVersion);
+    uint RowVersion,
+    // Phase 4.2 — снапшоты реквизитов
+    string? BankAccountSnapshotJson,
+    string? DeliveryAddressSnapshotJson,
+    // Phase 4.4 — чек-лист
+    string? PickingChecklistJson);
 
 public sealed record OrderStatusResponse(Guid Id, OrderStatus Status);
 
 public sealed record AssemblyChecklistResponse(Guid Id, bool IsAssemblyChecklistClosed);
+
+// ── Phase 4.1 — история статусов ──────────────────────────────────────────
+
+public sealed record OrderStatusHistoryEntry(
+    Guid Id,
+    OrderStatus Status,
+    string StatusName,
+    DateTimeOffset ChangedAt,
+    Guid? ChangedBy,
+    string? Comment);
+
+// ── Phase 4.4 — чек-лист сборки ───────────────────────────────────────────
+
+public sealed record PickingChecklistItem(
+    Guid ItemId,
+    string Name,
+    decimal Qty,
+    bool Done,
+    Guid? DoneBy,
+    DateTimeOffset? DoneAt);
+
+public sealed record PickingChecklistResponse(
+    Guid OrderId,
+    bool IsFullyClosed,
+    List<PickingChecklistItem> Items);
+
+public sealed record MarkPickingItemDoneRequest(Guid? DoneBy);
 
 /// <summary>Тип доставки заказа — определяет ветку статусной машины.</summary>
 public static class DeliveryTypes

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CrmSystem.Application.Abstractions;
 using CrmSystem.Application.Common;
 using CrmSystem.Application.Orders.Dtos;
@@ -11,24 +12,63 @@ namespace CrmSystem.Application.Orders;
 
 public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimeProvider clock) : IOrdersService
 {
-    public async Task<Result<IReadOnlyList<OrderResponse>>> GetAllAsync(CancellationToken ct)
+    public async Task<Result<IReadOnlyList<OrderResponse>>> GetAllAsync(IReadOnlyCollection<Guid>? organizationIds, CancellationToken ct)
     {
         if (!cu.CanViewOrders) return Error.Forbidden();
         if (cu.CompanyId is null) return Result<IReadOnlyList<OrderResponse>>.Success(Array.Empty<OrderResponse>());
 
-        var list = await db.Orders
+        var query = db.Orders
             .Where(x => x.CompanyId == cu.CompanyId)
             .Include(x => x.Company)
+            .Include(x => x.Organization)
             .Include(x => x.Counterparty)
             .Include(x => x.Lines).ThenInclude(l => l.Item)
+            .AsQueryable();
+
+        if (organizationIds is { Count: > 0 })
+            query = query.Where(x => organizationIds.Contains(x.OrganizationId));
+
+        var list = await query
             .OrderByDescending(x => x.Date)
             .ToListAsync(ct);
 
-        var itemIds = list.SelectMany(x => x.Lines).Select(l => l.ItemId).Distinct().ToList();
-        var available = await GetAvailableQtyByItemId(cu.CompanyId.Value, itemIds, ct);
-
-        IReadOnlyList<OrderResponse> result = list.Select(x => OrderMapper.ToResponse(x, available)).ToList();
+        IReadOnlyList<OrderResponse> result = list.Select(OrderMapper.ToResponse).ToList();
         return Result<IReadOnlyList<OrderResponse>>.Success(result);
+    }
+
+    public async Task<Result<PagedResponse<OrderResponse>>> GetPagedAsync(PageRequest request, IReadOnlyCollection<Guid>? organizationIds, CancellationToken ct)
+    {
+        if (!cu.CanViewOrders) return Error.Forbidden();
+        if (cu.CompanyId is null) return Result<PagedResponse<OrderResponse>>.Success(
+            new PagedResponse<OrderResponse>(Array.Empty<OrderResponse>(), 1, request.Take, 0, 0));
+
+        var query = db.Orders
+            .Where(x => x.CompanyId == cu.CompanyId)
+            .Include(x => x.Company)
+            .Include(x => x.Organization)
+            .Include(x => x.Counterparty)
+            .Include(x => x.Lines).ThenInclude(l => l.Item)
+            .AsQueryable();
+
+        if (organizationIds is { Count: > 0 })
+            query = query.Where(x => organizationIds.Contains(x.OrganizationId));
+
+        query = (request.SortBy?.ToLowerInvariant()) switch
+        {
+            "number" => request.SortDirection == "desc"
+                ? query.OrderByDescending(x => x.Number)
+                : query.OrderBy(x => x.Number),
+            "status" => request.SortDirection == "desc"
+                ? query.OrderByDescending(x => x.Status)
+                : query.OrderBy(x => x.Status),
+            _ => query.OrderByDescending(x => x.Date),
+        };
+
+        var paged = await query.ToPagedResponseAsync(request, ct);
+        var mapped = new PagedResponse<OrderResponse>(
+            paged.Items.Select(OrderMapper.ToResponse).ToList(),
+            paged.Page, paged.PageSize, paged.TotalCount, paged.TotalPages);
+        return Result<PagedResponse<OrderResponse>>.Success(mapped);
     }
 
     public async Task<Result<OrderResponse>> GetByIdAsync(Guid id, CancellationToken ct)
@@ -39,14 +79,18 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         var entity = await LoadFullAsync(id, ct);
         if (entity is null) return Error.NotFound();
 
-        var available = await GetAvailableQtyByItemId(cu.CompanyId.Value, entity.Lines.Select(l => l.ItemId).Distinct().ToList(), ct);
-        return OrderMapper.ToResponse(entity, available);
+        return OrderMapper.ToResponse(entity);
     }
 
     public async Task<Result<OrderResponse>> CreateAsync(SalesOrderDto dto, CancellationToken ct)
     {
         if (!cu.IsAccessOrdersEdit) return Error.Forbidden();
         if (cu.CompanyId is null) return Error.Validation("Пользователь не привязан к компании");
+
+        var organizationExists = await db.Organizations
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == dto.OrganizationId && x.CompanyId == cu.CompanyId, ct);
+        if (!organizationExists) return Error.Validation("Выбранная организация не найдена или не принадлежит текущей компании");
 
         var now = clock.UtcNow;
         var entity = new SalesOrder
@@ -55,6 +99,7 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
             Number = dto.Number,
             Date = dto.Date,
             CompanyId = cu.CompanyId.Value,
+            OrganizationId = dto.OrganizationId,
             CounterpartyId = dto.CounterpartyId,
             Status = OrderStatus.Draft,
             Comment = dto.Comment,
@@ -77,17 +122,22 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
 
         // Дозагружаем навигации для маппинга
         await db.Entry(entity).Reference(x => x.Company).LoadAsync(ct);
+        await db.Entry(entity).Reference(x => x.Organization).LoadAsync(ct);
         await db.Entry(entity).Reference(x => x.Counterparty).LoadAsync(ct);
         foreach (var l in entity.Lines) await db.Entry(l).Reference(x => x.Item).LoadAsync(ct);
 
-        var available = await GetAvailableQtyByItemId(cu.CompanyId.Value, entity.Lines.Select(l => l.ItemId).Distinct().ToList(), ct);
-        return OrderMapper.ToResponse(entity, available);
+        return OrderMapper.ToResponse(entity);
     }
 
     public async Task<Result<OrderResponse>> UpdateAsync(Guid id, SalesOrderDto dto, CancellationToken ct)
     {
         if (!cu.IsAccessOrdersEdit) return Error.Forbidden();
         if (cu.CompanyId is null) return Error.Validation("Пользователь не привязан к компании");
+
+        var organizationExists = await db.Organizations
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == dto.OrganizationId && x.CompanyId == cu.CompanyId, ct);
+        if (!organizationExists) return Error.Validation("Выбранная организация не найдена или не принадлежит текущей компании");
 
         var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return Error.NotFound();
@@ -105,6 +155,7 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         var now = clock.UtcNow;
         entity.Number = dto.Number;
         entity.Date = dto.Date;
+        entity.OrganizationId = dto.OrganizationId;
         entity.CounterpartyId = dto.CounterpartyId;
         entity.Comment = dto.Comment;
         entity.PickerId = dto.PickerId;
@@ -156,8 +207,7 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         var updated = await LoadFullAsync(id, ct);
         if (updated is null) return Error.NotFound();
 
-        var available = await GetAvailableQtyByItemId(cu.CompanyId.Value, updated.Lines.Select(l => l.ItemId).Distinct().ToList(), ct);
-        return OrderMapper.ToResponse(updated, available);
+        return OrderMapper.ToResponse(updated);
     }
 
     public async Task<Result<bool>> DeleteAsync(Guid id, CancellationToken ct)
@@ -173,6 +223,8 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         return true;
     }
 
+    // ── Статусные переходы ──────────────────────────────────────────────────
+
     public async Task<Result<OrderStatusResponse>> ConfirmAsync(Guid id, CancellationToken ct)
     {
         if (!cu.IsAccessOrdersEdit) return Error.Forbidden();
@@ -183,8 +235,22 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         if (entity.Status != OrderStatus.Draft)
             return Error.InvalidTransition($"Подтверждение возможно только из статуса Draft. Текущий статус: {entity.Status}.");
 
+        var now = clock.UtcNow;
+
+        // Phase 4.2 — снапшот реквизитов при подтверждении
+        entity.BankAccountSnapshotJson = entity.BankAccount is not null
+            ? JsonSerializer.Serialize(new { bankAccount = entity.BankAccount, contract = entity.Contract })
+            : null;
+        entity.DeliveryAddressSnapshotJson = entity.DeliveryAddress is not null
+            ? JsonSerializer.Serialize(new { deliveryAddress = entity.DeliveryAddress })
+            : null;
+
         entity.Status = OrderStatus.Processing;
-        entity.UpdatedAt = clock.UtcNow;
+        entity.UpdatedAt = now;
+
+        // Phase 4.1 — запись в историю
+        AppendHistory(entity, OrderStatus.Processing, now, "Заказ подтверждён");
+
         await db.SaveChangesAsync(ct);
         return new OrderStatusResponse(entity.Id, entity.Status);
     }
@@ -199,8 +265,13 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         if (OrderStatusTransitions.IsFinal(entity.Status))
             return Error.InvalidTransition($"Нельзя отменить заказ в финальном статусе '{entity.Status}'.");
 
+        var now = clock.UtcNow;
         entity.Status = OrderStatus.Cancelled;
-        entity.UpdatedAt = clock.UtcNow;
+        entity.UpdatedAt = now;
+
+        // Phase 4.1
+        AppendHistory(entity, OrderStatus.Cancelled, now, "Заказ отменён");
+
         await db.SaveChangesAsync(ct);
         return new OrderStatusResponse(entity.Id, entity.Status);
     }
@@ -210,23 +281,69 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         if (!cu.IsAccessOrdersEdit) return Error.Forbidden();
         if (cu.CompanyId is null) return Error.Validation("Пользователь не привязан к компании");
 
-        var entity = await db.Orders.Include(x => x.Lines)
+        var entity = await db.Orders
+            .Include(x => x.Lines)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
         if (entity is null) return Error.NotFound();
 
         if (OrderStatusTransitions.IsFinal(entity.Status))
             return Error.InvalidTransition($"Заказ в финальном статусе '{entity.Status}', переход невозможен.");
 
-        var itemIds = entity.Lines.Select(l => l.ItemId).Distinct().ToList();
-        var available = await GetAvailableQtyByItemId(cu.CompanyId.Value, itemIds, ct);
-        var needsManufacturing = NeedsManufacturing(entity, available);
+        // Phase 4.5 — guard: WaitingForPayment → BillConfirmed требует Invoice
+        if (entity.Status == OrderStatus.WaitingForPayment)
+        {
+            var hasIssuedInvoice = await db.Invoices.AsNoTracking()
+                .AnyAsync(x => x.OrderId == id && x.Status == InvoiceStatus.Issued && !x.IsDeleted, ct);
+            if (!hasIssuedInvoice)
+                return new Error("no_issued_invoice", "Невозможно подтвердить оплату: нет выставленного счёта для заказа.");
+        }
 
+        // Phase 4.5 — guard: Picking → ReadyForShipment требует закрытого чек-листа
+        var needsManufacturing = false;
         var next = OrderStatusTransitions.GetNextStatus(entity.Status, deliveryType, needsManufacturing);
         if (next is null)
             return Error.InvalidTransition($"Нет следующего статуса для '{entity.Status}'.");
 
+        if (entity.Status == OrderStatus.Picking &&
+            (next == OrderStatus.AwaitingPickup || next == OrderStatus.Delivering || next == OrderStatus.TransferredToTransport))
+        {
+            if (!entity.IsAssemblyChecklistClosed)
+            {
+                var items = PickingChecklistHelper.Deserialize(entity.PickingChecklistJson);
+                if (items.Count > 0 && items.Any(x => !x.Done))
+                    return new Error("checklist_not_closed", "Невозможно перейти в следующий статус: не все позиции чек-листа сборки отмечены.");
+            }
+        }
+
+        var now = clock.UtcNow;
+
+        // Phase 4.4 — при переходе в Picking генерируем чек-лист
+        if (next == OrderStatus.Picking && entity.PickingChecklistJson is null)
+        {
+            var checklistItems = entity.Lines.Select(l => new PickingChecklistItem(
+                l.ItemId, l.NameSnapshot, l.Qty, false, null, null)).ToList();
+            entity.PickingChecklistJson = PickingChecklistHelper.Serialize(checklistItems);
+        }
+
         entity.Status = next.Value;
-        entity.UpdatedAt = clock.UtcNow;
+        entity.UpdatedAt = now;
+
+        // Phase 4.1
+        var historyComment = next.Value switch
+        {
+            OrderStatus.WaitingForPayment       => "Ожидает оплаты",
+            OrderStatus.BillConfirmed           => "Счёт подтверждён",
+            OrderStatus.Manufacturing           => "Передана в производство",
+            OrderStatus.Picking                 => "Передана на сборку",
+            OrderStatus.TransferredToTransport  => deliveryType is not null ? $"Передан в ТК ({deliveryType})" : "Передан в транспортную компанию",
+            OrderStatus.DeliveringByTransport   => "Доставляется транспортной компанией",
+            OrderStatus.Delivering              => "Передан курьеру",
+            OrderStatus.AwaitingPickup          => "Ожидает самовывоза",
+            OrderStatus.Completed               => "Заказ выполнен",
+            _                                   => "Смена статуса"
+        };
+        AppendHistory(entity, next.Value, now, historyComment);
+
         await db.SaveChangesAsync(ct);
         return new OrderStatusResponse(entity.Id, entity.Status);
     }
@@ -250,11 +367,94 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         return new AssemblyChecklistResponse(entity.Id, true);
     }
 
+    // ── Phase 4.1 — история статусов ───────────────────────────────────────
+
+    public async Task<Result<IReadOnlyList<OrderStatusHistoryEntry>>> GetStatusHistoryAsync(Guid id, CancellationToken ct)
+    {
+        if (!cu.CanViewOrders) return Error.Forbidden();
+        if (cu.CompanyId is null) return Result<IReadOnlyList<OrderStatusHistoryEntry>>.Success(Array.Empty<OrderStatusHistoryEntry>());
+
+        var orderExists = await db.Orders.AsNoTracking()
+            .AnyAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
+        if (!orderExists) return Error.NotFound();
+
+        var history = await db.OrderStatusHistory
+            .Where(x => x.OrderId == id)
+            .OrderBy(x => x.ChangedAt)
+            .ToListAsync(ct);
+
+        IReadOnlyList<OrderStatusHistoryEntry> result = history.Select(h => new OrderStatusHistoryEntry(
+            h.Id, h.Status, h.Status.ToString(), h.ChangedAt, h.ChangedBy, h.Comment)).ToList();
+
+        return Result<IReadOnlyList<OrderStatusHistoryEntry>>.Success(result);
+    }
+
+    // ── Phase 4.4 — чек-лист сборки ────────────────────────────────────────
+
+    public async Task<Result<PickingChecklistResponse>> GetPickingChecklistAsync(Guid id, CancellationToken ct)
+    {
+        if (!cu.CanViewOrders) return Error.Forbidden();
+
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
+        if (entity is null) return Error.NotFound();
+
+        var items = PickingChecklistHelper.Deserialize(entity.PickingChecklistJson);
+        return PickingChecklistHelper.ToResponse(id, items);
+    }
+
+    public async Task<Result<PickingChecklistResponse>> UpdatePickingChecklistAsync(Guid id, List<PickingChecklistItem> items, CancellationToken ct)
+    {
+        if (!cu.IsAccessOrdersEdit) return Error.Forbidden();
+
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
+        if (entity is null) return Error.NotFound();
+
+        entity.PickingChecklistJson = PickingChecklistHelper.Serialize(items);
+        entity.IsAssemblyChecklistClosed = items.Count > 0 && items.All(x => x.Done);
+        entity.UpdatedAt = clock.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return PickingChecklistHelper.ToResponse(id, items);
+    }
+
+    public async Task<Result<PickingChecklistResponse>> MarkPickingItemDoneAsync(Guid id, Guid itemId, Guid? doneBy, CancellationToken ct)
+    {
+        if (cu.CompanyId is null) return Error.Validation("Пользователь не привязан к компании");
+
+        var entity = await db.Orders.FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
+        if (entity is null) return Error.NotFound();
+
+        var canMark = cu.IsAccessOrdersEdit || (cu.IsOrderPicker && entity.Status == OrderStatus.Picking);
+        if (!canMark) return Error.Forbidden();
+
+        var items = PickingChecklistHelper.Deserialize(entity.PickingChecklistJson);
+        var item = items.FirstOrDefault(x => x.ItemId == itemId);
+        if (item is null) return Error.NotFound();
+
+        var now = clock.UtcNow;
+        var updated = item with { Done = true, DoneBy = doneBy ?? cu.UserId, DoneAt = now };
+        var index = items.IndexOf(item);
+        items[index] = updated;
+
+        entity.PickingChecklistJson = PickingChecklistHelper.Serialize(items);
+
+        // Автозакрытие при полном чек-листе
+        if (items.All(x => x.Done))
+        {
+            entity.IsAssemblyChecklistClosed = true;
+        }
+
+        entity.UpdatedAt = now;
+        await db.SaveChangesAsync(ct);
+        return PickingChecklistHelper.ToResponse(id, items);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private Task<SalesOrder?> LoadFullAsync(Guid id, CancellationToken ct) =>
         db.Orders
             .Include(x => x.Company)
+            .Include(x => x.Organization)
             .Include(x => x.Counterparty)
             .Include(x => x.Lines).ThenInclude(l => l.Item)
             .FirstOrDefaultAsync(x => x.Id == id && x.CompanyId == cu.CompanyId, ct);
@@ -275,7 +475,6 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
             Net = totals.Net,
             Vat = totals.Vat,
             Gross = totals.Gross,
-            WarehouseId = line.WarehouseId,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -290,30 +489,20 @@ public sealed class OrdersService(CrmDbContext db, ICurrentUser cu, IDateTimePro
         o.TotalGross = totals.TotalGross;
     }
 
-    private static bool NeedsManufacturing(SalesOrder o, IReadOnlyDictionary<Guid, decimal> availableByItemId)
+    /// <summary>Добавляет запись в StatusHistory без SaveChanges.</summary>
+    private void AppendHistory(SalesOrder entity, OrderStatus status, DateTimeOffset changedAt, string? comment)
     {
-        foreach (var l in o.Lines)
+        var entry = new OrderStatusHistory
         {
-            availableByItemId.TryGetValue(l.ItemId, out var available);
-            if (available < l.Qty) return true;
-        }
-        return false;
-    }
-
-    private async Task<Dictionary<Guid, decimal>> GetAvailableQtyByItemId(
-        Guid companyId, IReadOnlyCollection<Guid> itemIds, CancellationToken ct)
-    {
-        if (itemIds.Count == 0) return new Dictionary<Guid, decimal>();
-
-        var rows = await db.StockBalances
-            .AsNoTracking()
-            .Include(x => x.Warehouse)
-            .Where(x => itemIds.Contains(x.ItemId) && x.Warehouse != null && x.Warehouse.CompanyId == companyId)
-            .Select(x => new { x.ItemId, Available = x.QtyOnHand - x.QtyReserved })
-            .ToListAsync(ct);
-
-        return rows
-            .GroupBy(x => x.ItemId)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.Available));
+            Id = Guid.NewGuid(),
+            OrderId = entity.Id,
+            Status = status,
+            ChangedAt = changedAt,
+            ChangedBy = cu.UserId,
+            Comment = comment,
+            CreatedAt = changedAt,
+            UpdatedAt = changedAt,
+        };
+        db.OrderStatusHistory.Add(entry);
     }
 }

@@ -6,6 +6,10 @@ public sealed class Invoice : AuditableEntity, ITenantOwned
     public DateOnly Date { get; set; }
 
     public Guid CompanyId { get; set; }
+
+    public Guid OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+
     public Guid CounterpartyId { get; set; }
 
     public Guid? OrderId { get; set; }
@@ -21,4 +25,11 @@ public sealed class Invoice : AuditableEntity, ITenantOwned
     public string? Comment { get; set; }
 
     public ICollection<InvoiceLine> Lines { get; set; } = new List<InvoiceLine>();
+
+    // Phase 4.3 — снапшоты реквизитов и расчёта
+    public string? BankRequisitesSnapshotJson { get; set; }
+    public string? CounterpartyInnSnapshot { get; set; }
+    public string? CounterpartyKppSnapshot { get; set; }
+    public string? DeliveryAddressSnapshotJson { get; set; }
+    public string? CalculationSnapshotJson { get; set; }
 }

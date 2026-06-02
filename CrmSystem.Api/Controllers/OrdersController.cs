@@ -1,8 +1,10 @@
 using CrmSystem.Api.Infrastructure;
+using CrmSystem.Application.Common;
 using CrmSystem.Application.Orders;
 using CrmSystem.Application.Orders.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PickingChecklistItem = CrmSystem.Application.Orders.Dtos.PickingChecklistItem;
 
 namespace CrmSystem.Api.Controllers;
 
@@ -12,8 +14,22 @@ namespace CrmSystem.Api.Controllers;
 public sealed class OrdersController(IOrdersService orders) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll(CancellationToken ct) =>
-        (await orders.GetAllAsync(ct)).ToActionResult(this);
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? organizationIds,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDirection,
+        CancellationToken ct)
+    {
+        var parsed = OrgIdParser.Parse(organizationIds);
+        if (page.HasValue)
+        {
+            var req = new PageRequest(page.Value, pageSize ?? 20, sortBy, sortDirection ?? "asc");
+            return (await orders.GetPagedAsync(req, parsed, ct)).ToActionResult(this);
+        }
+        return (await orders.GetAllAsync(parsed, ct)).ToActionResult(this);
+    }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct) =>
@@ -54,4 +70,26 @@ public sealed class OrdersController(IOrdersService orders) : ControllerBase
     [HttpPost("{id:guid}/assembly-checklist/close")]
     public async Task<IActionResult> CloseAssemblyChecklist(Guid id, CancellationToken ct) =>
         (await orders.CloseAssemblyChecklistAsync(id, ct)).ToActionResult(this);
+
+    // GET /orders/{id}/status-history  [4.1]
+    [HttpGet("{id:guid}/status-history")]
+    public async Task<IActionResult> GetStatusHistory(Guid id, CancellationToken ct) =>
+        (await orders.GetStatusHistoryAsync(id, ct)).ToActionResult(this);
+
+    // GET /orders/{id}/picking-checklist  [4.4]
+    [HttpGet("{id:guid}/picking-checklist")]
+    public async Task<IActionResult> GetPickingChecklist(Guid id, CancellationToken ct) =>
+        (await orders.GetPickingChecklistAsync(id, ct)).ToActionResult(this);
+
+    // POST /orders/{id}/picking-checklist  [4.4]
+    [HttpPost("{id:guid}/picking-checklist")]
+    public async Task<IActionResult> UpdatePickingChecklist(
+        Guid id, [FromBody] List<PickingChecklistItem> items, CancellationToken ct) =>
+        (await orders.UpdatePickingChecklistAsync(id, items, ct)).ToActionResult(this);
+
+    // POST /orders/{id}/picking-checklist/items/{itemId}/done  [4.4]
+    [HttpPost("{id:guid}/picking-checklist/items/{itemId:guid}/done")]
+    public async Task<IActionResult> MarkPickingItemDone(
+        Guid id, Guid itemId, [FromBody] MarkPickingItemDoneRequest? req, CancellationToken ct) =>
+        (await orders.MarkPickingItemDoneAsync(id, itemId, req?.DoneBy, ct)).ToActionResult(this);
 }
