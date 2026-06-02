@@ -1,4 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { ToastContainer } from './components/Toast'
@@ -6,7 +8,6 @@ import { DashboardPage } from './pages/Dashboard'
 import { CompaniesPage } from './pages/Companies'
 import { CounterpartiesPage } from './pages/Counterparties'
 import { ItemsPage } from './pages/Items'
-import { WarehousesPage } from './pages/Warehouses'
 import { OrdersPage } from './pages/Orders'
 import { InvoicesPage } from './pages/Invoices'
 import { UpdsPage } from './pages/Upds'
@@ -18,6 +19,16 @@ import { OrganizationsPage } from './pages/Organizations'
 import { AuthProvider, useAuth } from './AuthContext'
 import { OrganizationProvider } from './OrganizationContext'
 import './App.css'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,       // 30 сек — данные считаются свежими
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
 
 function ProtectedLayout() {
   const { isAuthenticated, isLoading, profile } = useAuth()
@@ -40,7 +51,6 @@ function ProtectedLayout() {
               <Route path="/companies"      element={<CompaniesPage />} />
               <Route path="/counterparties" element={<CounterpartiesPage />} />
               <Route path="/items"          element={<ItemsPage />} />
-              <Route path="/warehouses"     element={<WarehousesPage />} />
               <Route path="/orders"         element={<OrdersPage />} />
               <Route path="/invoices"       element={<InvoicesPage />} />
               <Route path="/upds"           element={<UpdsPage />} />
@@ -58,6 +68,7 @@ function ProtectedLayout() {
 
 function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <BrowserRouter>
       <AuthProvider>
         <Routes>
@@ -68,6 +79,8 @@ function App() {
         </Routes>
       </AuthProvider>
     </BrowserRouter>
+    <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   )
 }
 
